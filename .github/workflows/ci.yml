@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (no warnings allowed)
+        run: |
+          swift build 2>&1 | tee build.log
+          ! grep -E "^/.*: warning:" build.log
+
+      - name: Test
+        run: swift test
+
+      - name: Bundle app (universal)
+        env:
+          UNIVERSAL: "1"
+        run: |
+          scripts/build-app.sh
+          scripts/build-dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MacFan-${{ github.sha }}
+          path: build/MacFan-v*-macOS.dmg*
