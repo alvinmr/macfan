@@ -22,6 +22,9 @@ struct FansView: View {
                         HelperSetupCard()
                     }
                     ModeDetail()
+                    if model.snapshot.battery != nil {
+                        PowerProfilesCard()
+                    }
                     SafetyFootnote()
                 }
             }
@@ -38,29 +41,37 @@ struct FansView: View {
 
 private struct LiveFansSection: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.showDetail) private var showDetail
 
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: Theme.Spacing.l)], spacing: Theme.Spacing.l) {
             ForEach(model.snapshot.fans) { fan in
-                Card {
-                    HStack(spacing: Theme.Spacing.l) {
-                        FanGauge(load: fan.load, lineWidth: 7)
-                            .frame(width: 56, height: 56)
-                        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                            Text(fan.name).font(.headline)
-                            RPMText(rpm: fan.currentRPM, font: .title2.weight(.semibold))
-                            Text("Range \(Int(fan.minimumRPM).formatted())–\(Int(fan.maximumRPM).formatted()) rpm")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 0)
-                        Sparkline(values: model.history.values(for: HistoryStore.key(forFan: fan.index)), minimumSpan: 500)
-                            .frame(width: 80, height: 32)
-                    }
-                }
-                .accessibilityElement(children: .combine)
+                Button { showDetail(.fan(index: fan.index)) } label: { card(for: fan) }
+                    .buttonStyle(PressableButtonStyle())
+                    .help("Show history")
             }
         }
+    }
+
+    private func card(for fan: FanStatus) -> some View {
+        Card {
+            HStack(spacing: Theme.Spacing.l) {
+                FanGauge(load: fan.load, lineWidth: 7)
+                    .frame(width: 56, height: 56)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(fan.name).font(.headline)
+                    RPMText(rpm: fan.currentRPM, font: .title2.weight(.semibold))
+                    Text("Range \(Int(fan.minimumRPM).formatted())–\(Int(fan.maximumRPM).formatted()) rpm")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Sparkline(values: model.history.values(for: HistoryStore.key(forFan: fan.index)), minimumSpan: 500)
+                    .frame(width: 80, height: 32)
+            }
+        }
+        .contentShape(.rect(cornerRadius: Theme.Radius.card))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -457,6 +468,56 @@ private struct FixedSpeedSettings: View {
         model.snapshot.fans
             .map { "\($0.name): \(Int($0.rpm(forSpeed: preferences.cooling.fixedSpeed).rounded()).formatted()) rpm" }
             .joined(separator: " · ")
+    }
+}
+
+// MARK: - Power profiles
+
+/// Quiet on battery, more cooling when plugged in — without having to remember to switch.
+private struct PowerProfilesCard: View {
+    @Environment(AppModel.self) private var model
+    @Environment(Preferences.self) private var preferences
+
+    var body: some View {
+        @Bindable var preferences = preferences
+
+        Card {
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                Toggle(isOn: Binding(get: { preferences.powerProfiles.isEnabled },
+                                     set: { model.setPowerProfilesEnabled($0) })) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                        Text("Switch when plugging in or unplugging").font(.headline)
+                        Text("You can still pick a mode by hand; it holds until the power source changes.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .toggleStyle(.switch)
+
+                if preferences.powerProfiles.isEnabled {
+                    HStack(spacing: Theme.Spacing.xl) {
+                        Picker(selection: $preferences.powerProfiles.onBattery) {
+                            modes
+                        } label: {
+                            Label("On battery", systemImage: "battery.75percent")
+                        }
+                        Picker(selection: $preferences.powerProfiles.onAdapter) {
+                            modes
+                        } label: {
+                            Label("Plugged in", systemImage: "powerplug")
+                        }
+                    }
+                    .fixedSize()
+                }
+            }
+        }
+    }
+
+    private var modes: some View {
+        ForEach(CoolingMode.allCases, id: \.self) { mode in
+            Text(mode.title).tag(mode)
+        }
     }
 }
 

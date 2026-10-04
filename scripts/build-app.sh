@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds build/MacFan.app from the Swift package.
+# Builds build/MacFan.app from the Swift package, with its debug symbols in build/dSYMs.
 #
 #   scripts/build-app.sh                       # release, this Mac's architecture, ad-hoc signed
 #   UNIVERSAL=1 scripts/build-app.sh           # Apple Silicon + Intel (what releases ship)
@@ -35,6 +35,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchDaemons" "$APP/Contents/Frameworks"
 cp "$BIN/MacFan" "$APP/Contents/MacOS/MacFan"
 cp "$BIN/macfan-helper" "$APP/Contents/MacOS/macfan-helper"
+# Symbols are over half of each binary. Keep them in dSYMs next to the app (releases
+# attach them, for reading crash reports), and ship the binaries without.
+DSYMS="$ROOT/build/dSYMs"
+rm -rf "$DSYMS"
+mkdir -p "$DSYMS"
+for binary in MacFan macfan-helper; do
+  dsymutil "$APP/Contents/MacOS/$binary" -o "$DSYMS/$binary.dSYM"
+  strip -x -S "$APP/Contents/MacOS/$binary"
+done
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp "Resources/$HELPER_ID.plist" "$APP/Contents/Library/LaunchDaemons/"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"

@@ -60,6 +60,28 @@ final class Preferences {
         didSet { defaults.set(try? JSONEncoder().encode(cooling), forKey: Key.cooling) }
     }
 
+    /// Cooling mode to switch to when the Mac is plugged in or unplugged.
+    var powerProfiles: PowerProfiles {
+        didSet { defaults.set(try? JSONEncoder().encode(powerProfiles), forKey: Key.powerProfiles) }
+    }
+
+    /// Sensors shown in the sidebar, in the order they were pinned.
+    var pinnedSensorIDs: [String] {
+        didSet { defaults.set(pinnedSensorIDs, forKey: Key.pinnedSensorIDs) }
+    }
+
+    func isPinned(_ sensorID: String) -> Bool {
+        pinnedSensorIDs.contains(sensorID)
+    }
+
+    func togglePin(_ sensorID: String) {
+        if let index = pinnedSensorIDs.firstIndex(of: sensorID) {
+            pinnedSensorIDs.remove(at: index)
+        } else {
+            pinnedSensorIDs.append(sensorID)
+        }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -77,6 +99,9 @@ final class Preferences {
         loggingInterval = Self.validated(defaults.object(forKey: Key.loggingInterval), allowed: [5, 10, 60], default: 10)
         cooling = defaults.data(forKey: Key.cooling)
             .flatMap { try? JSONDecoder().decode(CoolingSettings.self, from: $0) } ?? CoolingSettings()
+        powerProfiles = defaults.data(forKey: Key.powerProfiles)
+            .flatMap { try? JSONDecoder().decode(PowerProfiles.self, from: $0) } ?? PowerProfiles()
+        pinnedSensorIDs = defaults.stringArray(forKey: Key.pinnedSensorIDs) ?? []
     }
 
     private static func validated(_ stored: Any?, allowed: Set<Double>, default fallback: Double) -> Double {
@@ -100,5 +125,7 @@ final class Preferences {
         static let loggingEnabled = "loggingEnabled"
         static let loggingInterval = "loggingInterval"
         static let cooling = "cooling"
+        static let powerProfiles = "powerProfiles"
+        static let pinnedSensorIDs = "pinnedSensorIDs"
     }
 }

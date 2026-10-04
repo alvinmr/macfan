@@ -1,4 +1,5 @@
 import AppKit
+import IOKit.ps
 import MacFanCore
 import Observation
 import os
@@ -18,8 +19,18 @@ final class AppModel {
     private(set) var history = HistoryStore()
     private(set) var thermalState = ProcessInfo.processInfo.thermalState
     private(set) var hasStarted = false
+    /// Busiest apps, busiest first. Only kept current while a view showing them is on screen.
+    private(set) var topApps: [AppActivity] = []
+    /// What the menu bar shows. Assigned only when it changes, so the status item isn't
+    /// redrawn on every refresh.
+    private(set) var menuBarContent = MenuBarContent(symbol: "thermometer.medium", text: nil)
 
     @ObservationIgnored private let monitor = HardwareMonitor()
+    @ObservationIgnored private let activity = ActivityMonitor()
+    @ObservationIgnored private var activityWatchers = 0
+    @ObservationIgnored private var lastActivitySample = Date.distantPast
+    @ObservationIgnored private var powerSourceNotification: CFRunLoopSource?
+    @ObservationIgnored private var isOnBattery: Bool?
     @ObservationIgnored private let alerts = AlertCenter()
     @ObservationIgnored private let logger = CSVLogger(directory: CSVLogger.defaultDirectory)
     @ObservationIgnored private let log = Logger(subsystem: "io.github.alvinmr.MacFan", category: "model")
@@ -39,6 +50,7 @@ final class AppModel {
     func start() {
         guard loop == nil else { return }
         observeSystemEvents()
+        observePowerSource()
         loop = Task { [weak self] in
             await self?.helper.refresh()
             while let self, !Task.isCancelled {
@@ -87,6 +99,56 @@ final class AppModel {
         snapshot.fans.map(\.currentRPM).max()
     }
 
+    /// The app most worth mentioning when the Mac is warm: busy enough to matter.
+    var busiestApp: AppActivity? {
+        topApps.first.flatMap { $0.cpuPercent >= 50 ? $0 : nil }
+    }
+
+    func updateMenuBarContent() {
+        let reading = menuBarReading
+        let temperature = reading.map { preferences.unit.format($0.celsius) }
+        let rpm = fastestFanRPM.map { Int($0.rounded()).formatted() }
+        let content = switch preferences.menuBarDisplay {
+        case .temperature: MenuBarContent(symbol: (reading?.level ?? .cool).symbol, text: temperature)
+        case .fanSpeed: MenuBarContent(symbol: "fan", text: rpm ?? temperature)
+        case .both: MenuBarContent(symbol: (reading?.level ?? .cool).symbol,
+                                   text: [temperature, rpm].compactMap { $0 }.joined(separator: " · "))
+        case .iconOnly: MenuBarContent(symbol: (reading?.level ?? .cool).symbol, text: nil)
+        }
+        if content != menuBarContent { menuBarContent = content }
+    }
+
+    // MARK: App activity
+
+    /// Keeps `topApps` current for as long as the calling task runs. Use from `whileVisible`
+    /// on views that show it, so MacFan only walks the process list while someone is looking.
+    func watchActivity() async {
+        activityWatchers += 1
+        if activityWatchers == 1 {
+            await activity.reset()
+            lastActivitySample = .distantPast
+            await sampleActivity()
+        }
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(3600))
+        }
+        activityWatchers -= 1
+        if activityWatchers == 0 { topApps = [] }
+    }
+
+    private func sampleActivity() async {
+        let now = Date()
+        // Process CPU time is cumulative, so sampling less often loses nothing but latency.
+        guard now.timeIntervalSince(lastActivitySample) >= Self.activityInterval else { return }
+        lastActivitySample = now
+        if let apps = await activity.sample(at: now), activityWatchers > 0 {
+            topApps = Array(apps.prefix(5))
+        }
+        log.debug("Sampled app activity for \(self.activityWatchers) visible view(s)")
+    }
+
+    private static let activityInterval: TimeInterval = 3.5
+
     // MARK: Tick
 
     private func tick() async {
@@ -95,6 +157,9 @@ final class AppModel {
         history.record(snapshot)
         thermalState = ProcessInfo.processInfo.thermalState
         hasStarted = true
+
+        updateMenuBarContent()
+        if activityWatchers > 0 { await sampleActivity() }
 
         await cooling.update(settings: preferences.cooling, snapshot: snapshot)
         alerts.evaluate(snapshot, preferences: preferences, unit: preferences.unit)
@@ -116,6 +181,13 @@ final class AppModel {
         refreshNow()
     }
 
+    func setPowerProfilesEnabled(_ enabled: Bool) {
+        preferences.powerProfiles.isEnabled = enabled
+        if enabled, let isOnBattery {
+            setCoolingMode(preferences.powerProfiles.mode(onBattery: isOnBattery))
+        }
+    }
+
     func enableAlerts(_ enabled: Bool) async {
         if enabled {
             preferences.alertsEnabled = await alerts.requestAuthorization()
@@ -132,6 +204,33 @@ final class AppModel {
         Task {
             await monitor.discover()
             refreshNow()
+        }
+    }
+
+    // MARK: Power source
+
+    private func observePowerSource() {
+        powerSourceChanged()
+        // Fires on every battery percentage change too; `powerSourceChanged` ignores those.
+        guard let source = IOPSNotificationCreateRunLoopSource({ _ in
+            MainActor.assumeIsolated { AppModel.shared.powerSourceChanged() }
+        }, nil)?.takeRetainedValue() else { return }
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        powerSourceNotification = source
+    }
+
+    private func powerSourceChanged() {
+        guard let onBattery = PowerSource.isOnBattery(), onBattery != isOnBattery else { return }
+        let isLaunch = isOnBattery == nil
+        isOnBattery = onBattery
+        if preferences.powerProfiles.isEnabled {
+            setCoolingMode(preferences.powerProfiles.mode(onBattery: onBattery))
+        }
+        if !isLaunch {
+            Task {
+                await monitor.invalidateBattery()
+                refreshNow()
+            }
         }
     }
 
@@ -160,4 +259,9 @@ final class AppModel {
             }
         })
     }
+}
+
+struct MenuBarContent: Equatable {
+    let symbol: String
+    let text: String?
 }

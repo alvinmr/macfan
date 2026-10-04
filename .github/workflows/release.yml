@@ -113,10 +113,13 @@ jobs:
         run: |
           # A version-less copy keeps the README's one-click download link stable.
           cp "build/MacFan-v${VERSION}-macOS.dmg" build/MacFan-macOS.dmg
+          # The shipped binaries are stripped; these symbols turn crash reports back into file:line.
+          ditto -c -k --keepParent build/dSYMs "build/MacFan-v${VERSION}-dSYMs.zip"
           gh release upload "$TAG_NAME" \
             "build/MacFan-v${VERSION}-macOS.dmg" \
             "build/MacFan-v${VERSION}-macOS.dmg.sha256" \
             build/MacFan-macOS.dmg \
+            "build/MacFan-v${VERSION}-dSYMs.zip" \
             --clobber
 
       - name: Publish Sparkle appcast

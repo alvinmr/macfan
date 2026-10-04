@@ -11,6 +11,8 @@ let usage = """
       sensors [--all]   Temperatures MacFan recognises (--all includes unidentified ones)
       fans              Fan speeds and limits
       battery           Battery health
+      power             System power draw and battery charge rate
+      apps              Apps using the most CPU over the next two seconds
       keys              Every SMC temperature key with its type and value (for contributors)
     """
 
@@ -50,6 +52,26 @@ case "battery":
     print("Capacity:   \(battery.fullChargeCapacity) / \(battery.designCapacity) mAh")
     print("Charge:     \(Int((battery.charge * 100).rounded()))%\(battery.isCharging ? " (charging)" : "")")
     if let celsius = battery.celsius { print(String(format: "Temperature: %.1f °C", celsius)) }
+
+case "power":
+    let snapshot = await monitor.snapshot()
+    if let watts = snapshot.systemPower { print(String(format: "System:     %.1f W", watts)) } else { print("System:     not reported by this Mac") }
+    if let battery = snapshot.battery {
+        if let watts = battery.power { print(String(format: "Battery:    %+.1f W", watts)) }
+        if let adapter = battery.adapterWatts { print("Adapter:    \(adapter) W") }
+        if let minutes = battery.minutesRemaining { print("Remaining:  \(minutes / 60)h \(minutes % 60)m") }
+    }
+
+case "apps":
+    let activity = ActivityMonitor()
+    let start = ContinuousClock.now
+    _ = await activity.sample()
+    let cost = ContinuousClock.now - start
+    try? await Task.sleep(for: .seconds(2))
+    for app in (await activity.sample() ?? []).prefix(10) {
+        print(String(format: "%6.1f%%  ", app.cpuPercent) + "\(app.name)  \(app.id)")
+    }
+    print("(one sample took \(cost.formatted(.units(allowed: [.milliseconds], fractionalPart: .show(length: 2)))))")
 
 case "keys":
     do {

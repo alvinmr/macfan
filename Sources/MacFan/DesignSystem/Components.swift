@@ -19,8 +19,11 @@ struct Card<Content: View>: View {
     }
 }
 
-/// A temperature that rolls between values instead of flashing, with tabular digits so
-/// the layout never jitters as numbers change.
+/// A temperature with tabular digits, so the layout never jitters as numbers change.
+///
+/// Live values change every refresh and are deliberately not animated: a rolling-digit
+/// transition is a blur rendered on the CPU, and dozens of them every two seconds made
+/// MacFan itself a noticeable source of heat.
 struct TemperatureText: View {
     @Environment(Preferences.self) private var preferences
     let celsius: Double
@@ -31,8 +34,6 @@ struct TemperatureText: View {
         Text(preferences.unit.format(celsius, fractionDigits: fractionDigits))
             .font(font)
             .monospacedDigit()
-            .contentTransition(.numericText(value: celsius))
-            .fluidAnimation(value: celsius)
     }
 }
 
@@ -51,10 +52,19 @@ struct LevelBadge: View {
 
 /// Recent history as a line with a soft fill. Decorative; values are always shown as text too.
 struct Sparkline: View {
-    let values: [Double]
+    /// More points than this can't be told apart at sparkline size, but still cost drawing time.
+    private static let maximumPoints = 48
+
     var tint: Color = .accentColor
     /// Smallest vertical span, so sensor noise isn't magnified into drama.
     var minimumSpan: Double = 6
+    private let values: [Double]
+
+    init(values: [Double], tint: Color = .accentColor, minimumSpan: Double = 6) {
+        self.values = Self.downsample(values)
+        self.tint = tint
+        self.minimumSpan = minimumSpan
+    }
 
     var body: some View {
         Canvas { context, size in
@@ -86,6 +96,18 @@ struct Sparkline: View {
         }
         .accessibilityHidden(true)
     }
+
+    /// Averages neighbouring samples down to `maximumPoints`, keeping the newest value exact.
+    private static func downsample(_ values: [Double]) -> [Double] {
+        guard values.count > maximumPoints else { return values }
+        let size = Double(values.count) / Double(maximumPoints)
+        var result = (0..<maximumPoints - 1).map { bucket in
+            let slice = values[Int(Double(bucket) * size)..<Int(Double(bucket + 1) * size)]
+            return slice.reduce(0, +) / Double(slice.count)
+        }
+        result.append(values[values.count - 1])
+        return result
+    }
 }
 
 /// How hard a fan is working, as a ring.
@@ -102,7 +124,7 @@ struct FanGauge: View {
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
-        .fluidAnimation(value: load)
+        // Not animated: it changes every refresh, so an animation would never stop running.
         .accessibilityHidden(true)
     }
 }
@@ -119,7 +141,7 @@ struct PressableButtonStyle: ButtonStyle {
     }
 }
 
-/// "12,345 rpm" with tabular digits.
+/// "12,345 rpm" with tabular digits. Not animated, like `TemperatureText`.
 struct RPMText: View {
     let rpm: Double
     var font: Font = .body
@@ -128,8 +150,6 @@ struct RPMText: View {
         Text("\(Int(rpm.rounded()).formatted()) rpm")
             .font(font)
             .monospacedDigit()
-            .contentTransition(.numericText(value: rpm))
-            .fluidAnimation(value: rpm)
     }
 }
 
