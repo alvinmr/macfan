@@ -4,7 +4,7 @@ Thanks for helping. The most valuable contributions, roughly in order:
 
 1. **Sensor names for your Mac** — see [docs/ADDING_SENSORS.md](docs/ADDING_SENSORS.md).
 2. **Bug reports** with your Mac model, macOS version, and the output of
-   `swift run macfan sensors --all` and `swift run macfan fans`.
+   `swift run macfanctl sensors --all` and `swift run macfanctl fans`.
 3. **Fixes and features** — open an issue first for anything bigger than a small fix, so
    we can agree on the approach.
 
@@ -25,7 +25,7 @@ make app           # build/MacFan.app
 | `MacFanCore` | Domain logic: sensors, catalog, curves, safety, history, logging. No UI. |
 | `MacFanXPC` | The app ↔ helper contract |
 | `MacFanHelper` | The root daemon |
-| `MacFanCLI` | The `macfan` command |
+| `MacFanCLI` | The `macfanctl` command |
 | `MacFan` | The SwiftUI app |
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing structure.

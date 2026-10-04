@@ -47,7 +47,7 @@ click deeper.
   threshold, at most every 15 minutes.
 - **CSV logging**, one file per day.
 - **Automatic updates** with [Sparkle](https://sparkle-project.org), verified by signature.
-- **`macfan` CLI** for scripts and bug reports.
+- **`macfanctl` CLI** for scripts and bug reports.
 
 <p align="center">
   <img src="docs/images/fans.png" width="49%" alt="Fan control with a draggable curve">
@@ -105,11 +105,11 @@ need the bundled app).
 ### Command line
 
 ```sh
-swift run macfan sensors        # recognised sensors
-swift run macfan sensors --all  # including unidentified ones
-swift run macfan fans
-swift run macfan battery
-swift run macfan keys           # raw SMC temperature keys, for contributors
+swift run macfanctl sensors        # recognised sensors
+swift run macfanctl sensors --all  # including unidentified ones
+swift run macfanctl fans
+swift run macfanctl battery
+swift run macfanctl keys           # raw SMC temperature keys, for contributors
 ```
 
 ## Fan control and the helper

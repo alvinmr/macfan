@@ -2,11 +2,11 @@ import Foundation
 import MacFanCore
 import SMCKit
 
-// `macfan` — inspect what MacFan sees. Useful for bug reports and for adding
+// `macfanctl` — inspect what MacFan sees. Useful for bug reports and for adding
 // sensor names for new Macs (see docs/ADDING_SENSORS.md).
 
 let usage = """
-    usage: macfan <command>
+    usage: macfanctl <command>
 
       sensors [--all]   Temperatures MacFan recognises (--all includes unidentified ones)
       fans              Fan speeds and limits

@@ -8,7 +8,7 @@ Sensors** is on in the Sensors toolbar.
 ## 1. Find the key
 
 ```sh
-swift run macfan keys
+swift run macfanctl keys
 ```
 
 prints every temperature key, its type, its current value, and the name MacFan gives it
@@ -36,11 +36,11 @@ Rule("TC1?", .cpu, "CPU Cluster #"),
 
 ## 3. Add a test
 
-Add a case to `classifiesAppleSiliconAndIntelFamilies` in
+Add a case to the `classifies apple silicon and intel families` test in
 `Tests/MacFanCoreTests/SensorCatalogTests.swift`, then run `swift test`.
 
 ## 4. Open a pull request
 
 Include your Mac model (`sysctl -n hw.model`), your chip, and how you identified the key.
-If you are not sure what a key measures, open an issue with the `macfan keys` output
+If you are not sure what a key measures, open an issue with the `macfanctl keys` output
 instead — guesses presented as facts make the app less trustworthy.

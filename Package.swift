@@ -18,7 +18,8 @@ let package = Package(
     products: [
         .executable(name: "MacFan", targets: ["MacFan"]),
         .executable(name: "macfan-helper", targets: ["MacFanHelper"]),
-        .executable(name: "macfan", targets: ["MacFanCLI"]),
+        // Not "macfan": on a case-insensitive filesystem it would overwrite the "MacFan" app binary.
+        .executable(name: "macfanctl", targets: ["MacFanCLI"]),
         .library(name: "MacFanCore", targets: ["MacFanCore"]),
     ],
     dependencies: [
@@ -59,7 +60,7 @@ let package = Package(
             swiftSettings: approachableConcurrency
         ),
 
-        // `macfan` command-line tool: inspect sensors, fans and raw SMC keys.
+        // `macfanctl` command-line tool: inspect sensors, fans and raw SMC keys.
         .executableTarget(
             name: "MacFanCLI",
             dependencies: ["MacFanCore", "SMCKit"],

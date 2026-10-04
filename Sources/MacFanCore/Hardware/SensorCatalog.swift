@@ -7,7 +7,7 @@ import Foundation
 /// In a pattern, `?` matches any single character. In a name, `#` becomes an ordinal
 /// ("CPU 1", "CPU 2"…) and is dropped when only one sensor shares the name.
 ///
-/// Run `swift run macfan keys` to list every temperature key on your Mac.
+/// Run `swift run macfanctl keys` to list every temperature key on your Mac.
 public enum SensorCatalog {
     public struct Rule: Sendable {
         public let pattern: String
