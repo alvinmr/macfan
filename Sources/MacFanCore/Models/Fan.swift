@@ -8,6 +8,9 @@ public struct FanStatus: Identifiable, Hashable, Sendable {
     public let maximumRPM: Double
     public let targetRPM: Double?
     public let isManual: Bool
+    /// `false` when the firmware didn't report a usable min/max. Such a fan is shown, but
+    /// MacFan won't control it: `minimumRPM`/`maximumRPM` are then only display estimates.
+    public let hasKnownLimits: Bool
 
     public init(
         index: Int,
@@ -16,7 +19,8 @@ public struct FanStatus: Identifiable, Hashable, Sendable {
         minimumRPM: Double,
         maximumRPM: Double,
         targetRPM: Double?,
-        isManual: Bool
+        isManual: Bool,
+        hasKnownLimits: Bool = true
     ) {
         self.index = index
         self.name = name
@@ -25,6 +29,7 @@ public struct FanStatus: Identifiable, Hashable, Sendable {
         self.maximumRPM = maximumRPM
         self.targetRPM = targetRPM
         self.isManual = isManual
+        self.hasKnownLimits = hasKnownLimits
     }
 
     public var id: Int { index }

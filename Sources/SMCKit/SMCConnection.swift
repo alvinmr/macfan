@@ -163,3 +163,13 @@ public final class SMCConnection: @unchecked Sendable {
         }
     }
 }
+
+/// The few SMC operations fan control needs. `SMCConnection` provides them for real;
+/// tests substitute an in-memory SMC so failure paths can be exercised without hardware.
+public protocol SMCKeyAccess {
+    func double(_ key: SMCKey) -> Double?
+    func contains(_ key: SMCKey) -> Bool
+    func write(_ key: SMCKey, value: Double) throws
+}
+
+extension SMCConnection: SMCKeyAccess {}

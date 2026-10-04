@@ -12,14 +12,14 @@ public actor HardwareMonitor {
     private static let batteryRefreshInterval: TimeInterval = 30
 
     private let sensorProvider: CompositeSensorProvider
-    private let fanControl: SMCFanControl?
+    private let fanControl: SMCFanControl<SMCConnection>?
     private var sensors: [Sensor]?
     private var battery: (date: Date, info: BatteryInfo?)?
 
     public init() {
         let smc = try? SMCConnection()
         sensorProvider = CompositeSensorProvider(smc: smc)
-        fanControl = smc.map(SMCFanControl.init)
+        fanControl = smc.map { SMCFanControl(smc: $0) }
     }
 
     /// `false` in virtual machines and other environments without an SMC.
@@ -44,16 +44,20 @@ public actor HardwareMonitor {
     }
 
     private func readFans() -> [FanStatus] {
-        guard let readings = fanControl?.readings() else { return [] }
+        guard let readings = try? fanControl?.readings() else { return [] }
         return readings.map { reading in
-            FanStatus(
+            // Unknown limits are shown as best-effort numbers but flagged, so MacFan never
+            // takes manual control of a fan whose safe range it doesn't know.
+            let limits = reading.validLimits
+            return FanStatus(
                 index: reading.index,
                 name: FanStatus.name(forIndex: reading.index, count: readings.count),
                 currentRPM: reading.actualRPM,
-                minimumRPM: reading.minimumRPM,
-                maximumRPM: reading.maximumRPM,
+                minimumRPM: limits?.lowerBound ?? 0,
+                maximumRPM: limits?.upperBound ?? reading.actualRPM,
                 targetRPM: reading.targetRPM,
-                isManual: reading.isManual
+                isManual: reading.isManual,
+                hasKnownLimits: limits != nil
             )
         }
     }

@@ -5,9 +5,11 @@ import os
 
 /// Serves `MacFanHelperProtocol` as root.
 ///
-/// Safety nets, in order of how often they matter:
+/// The safety rules live in `FanControlSession` (and its tests); this type adds XPC,
+/// logging and timers. Safety nets, in order of how often they matter:
 /// 1. Every fan is handed back to macOS when the last client disconnects (app quit or crash).
-/// 2. A watchdog does the same if the app stops sending commands for `watchdogTimeout`.
+/// 2. A watchdog does the same if the app stops sending successful commands for
+///    `watchdogTimeout`, and keeps retrying if a hand-back fails.
 /// 3. On SIGTERM (unregister, shutdown) fans are restored before exiting.
 ///
 /// `@unchecked Sendable` is backed by a real rule: every mutable property is read and
@@ -19,9 +21,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, MacFanHelperProtocol
     private let clientRequirement: String
 
     // Everything below is only touched on `queue`.
-    private var fanControl: SMCFanControl?
-    private var isControlling = false
-    private var lastCommand = Date.distantPast
+    private var session: FanControlSession<SMCConnection>?
     private var openConnections = 0
     private var watchdog: DispatchSourceTimer?
 
@@ -40,7 +40,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, MacFanHelperProtocol
     }
 
     func restoreSynchronously() {
-        queue.sync { restoreLocked(reason: "terminating") }
+        queue.sync { _ = restoreLocked(reason: "terminating") }
     }
 
     // MARK: NSXPCListenerDelegate
@@ -64,14 +64,8 @@ final class HelperService: NSObject, NSXPCListenerDelegate, MacFanHelperProtocol
 
     func setTargetRPM(_ rpm: Double, fanIndex: Int, withReply reply: @escaping @Sendable (NSError?) -> Void) {
         queue.async { [self] in
-            lastCommand = Date()
             do {
-                let fans = try smcFanControl()
-                guard (0..<fans.fanCount()).contains(fanIndex), rpm.isFinite else {
-                    throw NSError.helper(.writeFailed, "Invalid fan \(fanIndex) or speed \(rpm)")
-                }
-                isControlling = true
-                try fans.setTarget(rpm: rpm, fan: fanIndex)
+                try activeSession().setTarget(rpm: rpm, fan: fanIndex, at: Date())
                 reply(nil)
             } catch let error as NSError where error.domain == HelperConstants.errorDomain {
                 reply(error)
@@ -84,47 +78,57 @@ final class HelperService: NSObject, NSXPCListenerDelegate, MacFanHelperProtocol
 
     func restoreSystemControl(withReply reply: @escaping @Sendable (NSError?) -> Void) {
         queue.async { [self] in
-            restoreLocked(reason: "requested")
-            reply(nil)
+            reply(restoreLocked(reason: "requested"))
         }
     }
 
     // MARK: Private (call on `queue`)
 
-    private func smcFanControl() throws -> SMCFanControl {
-        if let fanControl { return fanControl }
+    private func activeSession() throws -> FanControlSession<SMCConnection> {
+        if let session { return session }
         do {
-            let control = SMCFanControl(smc: try SMCConnection())
-            fanControl = control
-            return control
+            let created = FanControlSession(
+                fans: SMCFanControl(smc: try SMCConnection()),
+                watchdogTimeout: HelperConstants.watchdogTimeout
+            )
+            session = created
+            return created
         } catch {
             throw NSError.helper(.smcUnavailable, String(describing: error))
         }
     }
 
-    private func restoreLocked(reason: String) {
-        isControlling = false
-        lastCommand = .distantPast
-        guard let fans = try? smcFanControl() else { return }
+    /// `nil` when every fan is confirmably back with macOS; otherwise the reason it isn't.
+    private func restoreLocked(reason: String) -> NSError? {
         do {
-            try fans.restoreAutomatic()
+            try activeSession().restore()
             log.info("Fans returned to macOS (\(reason, privacy: .public))")
+            return nil
+        } catch let error as NSError where error.domain == HelperConstants.errorDomain {
+            return error
         } catch {
-            log.error("Restoring fans failed: \(String(describing: error), privacy: .public)")
+            log.error("Returning fans to macOS failed (\(reason, privacy: .public)): \(String(describing: error), privacy: .public)")
+            return .helper(.writeFailed, String(describing: error))
         }
     }
 
     private func connectionClosed() {
         queue.async { [self] in
             openConnections = max(0, openConnections - 1)
-            if openConnections == 0, isControlling {
-                restoreLocked(reason: "client disconnected")
+            if openConnections == 0, session?.isControlling == true {
+                _ = restoreLocked(reason: "client disconnected")
             }
         }
     }
 
     private func checkWatchdog() {
-        guard isControlling, Date().timeIntervalSince(lastCommand) > HelperConstants.watchdogTimeout else { return }
-        restoreLocked(reason: "watchdog: no commands for \(Int(HelperConstants.watchdogTimeout))s")
+        switch session?.checkWatchdog(at: Date()) {
+        case .returnedFans:
+            log.info("Watchdog returned the fans to macOS: no commands for \(Int(HelperConstants.watchdogTimeout))s")
+        case .restoreFailed:
+            log.error("Watchdog could not return the fans to macOS; retrying")
+        case .idle, nil:
+            break
+        }
     }
 }

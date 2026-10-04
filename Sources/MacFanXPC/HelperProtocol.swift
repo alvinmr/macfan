@@ -9,8 +9,10 @@ public enum HelperConstants {
     /// File name inside `MacFan.app/Contents/Library/LaunchDaemons/`.
     public static let daemonPlistName = "\(helperLabel).plist"
 
-    /// Bump whenever `MacFanHelperProtocol` changes, so the app asks to update the helper.
-    public static let protocolVersion = "1"
+    /// Bump whenever `MacFanHelperProtocol` *or the helper's behavior* changes, so the app
+    /// asks to update the helper. Replacing the app doesn't restart a running helper: without
+    /// a bump, an updated app keeps talking to the old helper code until the Mac restarts.
+    public static let protocolVersion = "2"
 
     /// If the app goes silent this long while fans are manual, the helper hands them back to macOS.
     public static let watchdogTimeout: TimeInterval = 20

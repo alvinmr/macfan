@@ -13,6 +13,8 @@ public enum SMCError: Error, Equatable, Sendable, CustomStringConvertible {
     case invalidSize(key: String, expected: Int, actual: Int)
     /// A write was accepted but the value did not stick (e.g. macOS reclaimed fan control).
     case writeNotApplied(key: String)
+    /// Fan data needed to control a fan safely is missing or nonsensical.
+    case invalidFanData(String)
 
     public var description: String {
         switch self {
@@ -25,6 +27,7 @@ public enum SMCError: Error, Equatable, Sendable, CustomStringConvertible {
         case .unsupportedType(let key, let type): "SMC key \(key) has unsupported type \"\(type)\""
         case .invalidSize(let key, let expected, let actual): "SMC key \(key) expects \(expected) bytes, got \(actual)"
         case .writeNotApplied(let key): "SMC did not apply the write to \(key)"
+        case .invalidFanData(let detail): "Unusable fan data: \(detail)"
         }
     }
 
