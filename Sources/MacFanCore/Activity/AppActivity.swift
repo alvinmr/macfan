@@ -24,6 +24,24 @@ public struct CPULoad: Hashable, Sendable {
         self.busyTicks = busyTicks
         self.totalTicks = totalTicks
     }
+
+    /// The counters right now. A single cheap kernel call.
+    public static func current() -> CPULoad? {
+        var info = host_cpu_load_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics(host, HOST_CPU_LOAD_INFO, $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        let ticks = info.cpu_ticks
+        let user = UInt64(ticks.0), system = UInt64(ticks.1), idle = UInt64(ticks.2), nice = UInt64(ticks.3)
+        return CPULoad(busyTicks: user + system + nice, totalTicks: user + system + idle + nice)
+    }
+
+    /// Each `mach_host_self()` call adds a port reference, so take one and keep it.
+    private static let host = mach_host_self()
 }
 
 /// An app and how hard it is working the CPU right now.
@@ -52,8 +70,10 @@ public struct AppActivity: Identifiable, Hashable, Sendable {
     public var isSystem: Bool { id == Self.systemID }
 
     /// Part of macOS rather than something the user installed.
-    public var isSystemComponent: Bool {
-        isSystem || id.hasPrefix("/System/") || id.hasPrefix("/usr/") || id.hasPrefix(ActivityTracker.knownPrefix)
+    public var isSystemComponent: Bool { Self.isSystemComponent(id: id) }
+
+    static func isSystemComponent(id: String) -> Bool {
+        id == systemID || id.hasPrefix("/System/") || id.hasPrefix("/usr/") || id.hasPrefix(ActivityTracker.knownPrefix)
     }
 }
 
@@ -150,8 +170,6 @@ public struct ActivityTracker: Sendable {
 /// Not thread-safe; `ActivityMonitor` owns it.
 final class ProcessReader {
     private var paths: [Int32: String] = [:]
-    /// Each `mach_host_self()` call adds a port reference, so take one and keep it.
-    private let host = mach_host_self()
     /// `ri_user_time` and `ri_system_time` are in Mach time units, which aren't nanoseconds on Apple Silicon.
     private let timebase: (numer: UInt64, denom: UInt64) = {
         var info = mach_timebase_info_data_t()
@@ -178,17 +196,7 @@ final class ProcessReader {
     }
 
     func load() -> CPULoad? {
-        var info = host_cpu_load_info_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                host_statistics(host, HOST_CPU_LOAD_INFO, $0, &count)
-            }
-        }
-        guard result == KERN_SUCCESS else { return nil }
-        let ticks = info.cpu_ticks
-        let user = UInt64(ticks.0), system = UInt64(ticks.1), idle = UInt64(ticks.2), nice = UInt64(ticks.3)
-        return CPULoad(busyTicks: user + system + nice, totalTicks: user + system + idle + nice)
+        CPULoad.current()
     }
 
     private func cpuTicks(of pid: Int32) -> UInt64? {

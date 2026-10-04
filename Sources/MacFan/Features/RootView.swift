@@ -7,6 +7,7 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
     case sensors
     case fans
     case battery
+    case insights
 
     var id: Self { self }
 
@@ -16,6 +17,7 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
         case .sensors: "Sensors"
         case .fans: "Fans"
         case .battery: "Battery"
+        case .insights: "Insights"
         }
     }
 
@@ -25,6 +27,7 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
         case .sensors: "thermometer.medium"
         case .fans: "fan"
         case .battery: "battery.75percent"
+        case .insights: "lightbulb"
         }
     }
 }
@@ -69,6 +72,7 @@ struct RootView: View {
             case .sensors: SensorsView()
             case .fans: FansView()
             case .battery: BatteryView()
+            case .insights: InsightsView()
             }
         }
         .whileVisible { await model.keepDisplayCurrent() }
@@ -97,6 +101,11 @@ struct RootView: View {
             return model.fastestFanRPM.map { Text("\(Int($0.rounded()).formatted()) rpm") }
         case .battery:
             return model.snapshot.battery.map { Text("\(Int(($0.charge * 100).rounded()))%") }
+        case .insights:
+            if model.hotMomentInProgress != nil { return Text("Now") }
+            let week = Date().addingTimeInterval(-7 * 24 * 3600)
+            let count = model.insights.moments.filter { $0.end >= week }.count
+            return count > 0 ? Text("\(count)") : nil
         }
     }
 

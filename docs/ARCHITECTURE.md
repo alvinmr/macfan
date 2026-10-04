@@ -55,7 +55,10 @@ Private symbols are bound with `__asm` labels so they never collide with IOKit's
   averages for the last hour, peaks; memory stays flat however long MacFan runs).
 - **Activity** — `ActivityTracker` (pure: process CPU time → per-app CPU %, helpers
   folded into their app) and `ActivityMonitor` (actor; reads `libproc`). The app only
-  samples while a view showing the result is on screen.
+  samples while a view showing the result is on screen, or during a hot moment.
+- **Insights** — `HotMomentRecorder` (pure: snapshots → hot moments with culprits),
+  `CoolingSampler` and `CoolingLog` (pure: steady one-minute samples → daily averages per
+  workload band), `InsightsFile` (one JSON file in Application Support).
 - **Logging** — `CSVLogger` (actor).
 
 ### `MacFanXPC`
