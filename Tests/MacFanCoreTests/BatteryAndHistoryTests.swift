@@ -61,6 +61,33 @@ struct BatteryInfoTests {
         #expect(battery.condition == .serviceRecommended)
     }
 
+    @Test func `reads charge rate adapter and time left`() throws {
+        let charging = try #require(BatteryInfo(properties: [
+            "DesignCapacity": 5000,
+            "Voltage": 12500,
+            // Published as the unsigned bit pattern of the signed value.
+            "InstantAmperage": NSNumber(value: UInt64(bitPattern: 2000)),
+            "IsCharging": true,
+            "ExternalConnected": true,
+            "AdapterDetails": ["Watts": 96] as [String: Any],
+            "AvgTimeToFull": 45,
+            "TimeRemaining": 300,
+        ]))
+        #expect(charging.power == 25)
+        #expect(charging.adapterWatts == 96)
+        #expect(charging.minutesRemaining == 45)
+
+        let draining = try #require(BatteryInfo(properties: [
+            "DesignCapacity": 5000,
+            "Voltage": 12000,
+            "Amperage": NSNumber(value: UInt64(bitPattern: -1000)),
+            "TimeRemaining": 65535,
+        ]))
+        #expect(draining.power == -12)
+        #expect(draining.adapterWatts == nil)
+        #expect(draining.minutesRemaining == nil, "65535 means macOS is still estimating")
+    }
+
     @Test func `no battery means nil`() {
         #expect(BatteryInfo(properties: ["BatteryInstalled": false, "DesignCapacity": 5000]) == nil)
         #expect(BatteryInfo(properties: [:]) == nil)
@@ -89,6 +116,128 @@ struct HistoryTests {
         #expect(history.values(for: HistoryStore.key(for: .cpu)) == [70, 70])
         #expect(history.values(for: HistoryStore.key(forFan: 0)) == [2500, 2500])
         #expect(history.values(for: "unknown").isEmpty)
+    }
+
+    @Test func `timeline averages each bucket and keeps the highest`() {
+        var history = HistoryStore(capacity: 10, bucketDuration: 10, bucketCapacity: 3)
+        let start = Date(timeIntervalSinceReferenceDate: 1000)
+        for (offset, value) in [(0.0, 40.0), (5, 60), (10, 50), (12, 70)] {
+            history.record(Fixtures.snapshot([Fixtures.reading(value, id: "a")], at: start.addingTimeInterval(offset)))
+        }
+
+        let timeline = history.timeline(for: "a")
+        #expect(timeline.map(\.date) == [start, start.addingTimeInterval(10)])
+        #expect(timeline.map(\.mean) == [50, 60])
+        #expect(timeline.map(\.max) == [60, 70])
+        #expect(history.timeline(for: "a", since: start.addingTimeInterval(5)).count == 1)
+        #expect(history.peak(for: "a") == 70)
+    }
+
+    @Test func `timeline memory is bounded`() {
+        var history = HistoryStore(capacity: 10, bucketDuration: 10, bucketCapacity: 3)
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        for step in 0..<20 {
+            history.record(Fixtures.snapshot([Fixtures.reading(Double(step), id: "a")], at: start.addingTimeInterval(Double(step) * 10)))
+        }
+        // Three finished buckets plus the one still filling.
+        #expect(history.timeline(for: "a").map(\.mean) == [16, 17, 18, 19])
+    }
+
+    @Test func `records system power`() {
+        var history = HistoryStore()
+        var snapshot = Fixtures.snapshot([])
+        snapshot.systemPower = 12.5
+        history.record(snapshot)
+        #expect(history.values(for: HistoryStore.systemPowerKey) == [12.5])
+    }
+}
+
+@Suite("App activity")
+struct ActivityTests {
+    @Test func `helpers count toward the app that contains them`() {
+        #expect(ActivityTracker.owner(ofExecutable: "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)").name == "Google Chrome")
+        let tool = ActivityTracker.owner(ofExecutable: "/usr/local/bin/ffmpeg")
+        #expect(tool.name == "ffmpeg")
+        #expect(tool.bundlePath == nil)
+    }
+
+    @Test func `cpu percent is time used over time elapsed`() throws {
+        var tracker = ActivityTracker()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let app = "/Applications/Foo.app/Contents/MacOS/Foo"
+        let helper = "/Applications/Foo.app/Contents/Frameworks/Foo Helper.app/Contents/MacOS/Foo Helper"
+        let tool = "/usr/bin/bar"
+
+        let baseline = tracker.update([
+            ProcessSample(pid: 1, path: app, cpuNanoseconds: 1_000_000_000),
+            ProcessSample(pid: 2, path: helper, cpuNanoseconds: 0),
+            ProcessSample(pid: 3, path: tool, cpuNanoseconds: 0),
+        ], at: start)
+        #expect(baseline == nil, "The first sample is only a baseline")
+
+        let update = tracker.update([
+            ProcessSample(pid: 1, path: app, cpuNanoseconds: 2_000_000_000),
+            ProcessSample(pid: 2, path: helper, cpuNanoseconds: 1_000_000_000),
+            ProcessSample(pid: 3, path: tool, cpuNanoseconds: 500_000_000),
+        ], at: start.addingTimeInterval(2))
+        let apps = try #require(update)
+
+        #expect(apps.map(\.name) == ["Foo", "bar"])
+        #expect(apps.map(\.cpuPercent) == [100, 25])
+    }
+
+    @Test func `what macOS won't itemize is counted as the system`() throws {
+        var tracker = ActivityTracker()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let app = "/Applications/Foo.app/Contents/MacOS/Foo"
+        _ = tracker.update([ProcessSample(pid: 1, path: app, cpuNanoseconds: 0)],
+                           load: CPULoad(busyTicks: 0, totalTicks: 0, cores: 4), at: start)
+        // Over one second the Mac was 50% busy across 4 cores (200% of one core); Foo used 50%.
+        let update = tracker.update([ProcessSample(pid: 1, path: app, cpuNanoseconds: 500_000_000)],
+                                    load: CPULoad(busyTicks: 200, totalTicks: 400, cores: 4), at: start.addingTimeInterval(1))
+        let apps = try #require(update)
+
+        #expect(apps.map(\.isSystem) == [true, false])
+        #expect(apps.map(\.cpuPercent) == [150, 50])
+    }
+
+    @Test func `no system entry when the apps account for everything`() throws {
+        var tracker = ActivityTracker()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let app = "/Applications/Foo.app/Contents/MacOS/Foo"
+        _ = tracker.update([ProcessSample(pid: 1, path: app, cpuNanoseconds: 0)],
+                           load: CPULoad(busyTicks: 0, totalTicks: 0, cores: 1), at: start)
+        let update = tracker.update([ProcessSample(pid: 1, path: app, cpuNanoseconds: 1_000_000_000)],
+                                    load: CPULoad(busyTicks: 100, totalTicks: 100, cores: 1), at: start.addingTimeInterval(1))
+        let apps = try #require(update)
+        #expect(apps.allSatisfy { !$0.isSystem })
+    }
+
+    @Test func `idle and exited processes are left out`() throws {
+        var tracker = ActivityTracker()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        _ = tracker.update([
+            ProcessSample(pid: 1, path: "/bin/idle", cpuNanoseconds: 5),
+            ProcessSample(pid: 2, path: "/bin/gone", cpuNanoseconds: 5),
+        ], at: start)
+        let update = tracker.update([ProcessSample(pid: 1, path: "/bin/idle", cpuNanoseconds: 5)], at: start.addingTimeInterval(1))
+        let apps = try #require(update)
+        #expect(apps.isEmpty)
+    }
+}
+
+@Suite("Power profiles")
+struct PowerProfileTests {
+    @Test func `picks the mode for the power source`() {
+        var profiles = PowerProfiles()
+        profiles.onBattery = .automatic
+        profiles.onAdapter = .max
+        #expect(profiles.mode(onBattery: true) == .automatic)
+        #expect(profiles.mode(onBattery: false) == .max)
+    }
+
+    @Test func `off by default so nothing changes behind the user's back`() {
+        #expect(PowerProfiles().isEnabled == false)
     }
 }
 

@@ -33,15 +33,26 @@ click deeper.
 - **Every sensor, grouped.** CPU, GPU, memory, SSD, battery, power, wireless and
   enclosure sensors on Apple Silicon and Intel, each with a 10-minute sparkline.
   Filterable, and with sensible per-part thresholds (a 90 °C CPU is fine; a 50 °C battery is not).
+- **History.** Click any card, fan or sensor for the last hour as a chart, with the
+  average, the highest, and the peak since MacFan opened.
+- **What's making it warm.** The apps using the most CPU, with their share, right on
+  the Overview and in the menu bar.
+- **Power draw.** How many watts your Mac is using, and on a laptop how fast the
+  battery is charging or draining and how long it has left.
+- **Pinned sensors.** Right-click a sensor to keep it in the sidebar.
 - **Four cooling modes.**
   - *Automatic* — macOS decides (the default).
   - *Smart Curve* — fan speed follows a temperature. Pick Quiet, Balanced or Strong,
     or drag the points to draw your own.
   - *Fixed Speed* — one steady speed.
   - *Full Speed* — everything at maximum.
+  - Optionally switch modes on their own when you plug in or unplug, say Automatic on
+    battery and Smart Curve on the adapter.
 - **Safety first.** Fans go back to macOS when you quit, when the Mac sleeps, if
   MacFan crashes or stops responding, and whenever a part becomes critically hot.
 - **Menu bar.** Temperature, fan speed, or both. Any sensor can be pinned there.
+- **Light on your Mac.** Under 2% CPU with the window open, and close to nothing when
+  it's only in the menu bar. MacFan shouldn't be a reason your Mac runs warm.
 - **Battery health.** Capacity vs. new, cycle count, temperature, and a clear verdict.
 - **Alerts** that stay rare enough to mean something: only after 30 s above your
   threshold, at most every 15 minutes.
@@ -105,6 +116,8 @@ swift run macfanctl sensors        # recognised sensors
 swift run macfanctl sensors --all  # including unidentified ones
 swift run macfanctl fans
 swift run macfanctl battery
+swift run macfanctl power          # system power draw and battery charge rate
+swift run macfanctl apps           # apps using the most CPU
 swift run macfanctl keys           # raw SMC temperature keys, for contributors
 ```
 

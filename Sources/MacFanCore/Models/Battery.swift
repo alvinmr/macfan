@@ -21,11 +21,25 @@ public struct BatteryInfo: Hashable, Sendable {
     public let isPluggedIn: Bool
     public let celsius: Double?
     public let hasPermanentFailure: Bool
+    /// Volts.
+    public let voltage: Double?
+    /// Amps; negative while discharging.
+    public let amperage: Double?
+    /// The connected power adapter's rating, when macOS knows it.
+    public let adapterWatts: Int?
+    /// Minutes until empty (on battery) or full (charging), once macOS has an estimate.
+    public let minutesRemaining: Int?
 
     /// Remaining capacity relative to new, 0…1 (can exceed 1 slightly on brand-new batteries).
     public var health: Double {
         guard designCapacity > 0 else { return 0 }
         return Double(fullChargeCapacity) / Double(designCapacity)
+    }
+
+    /// Watts flowing into (positive) or out of (negative) the battery.
+    public var power: Double? {
+        guard let voltage, let amperage else { return nil }
+        return voltage * amperage
     }
 
     public var condition: Condition {
@@ -41,6 +55,10 @@ public struct BatteryInfo: Hashable, Sendable {
     public init?(properties: [String: Any]) {
         let nested = properties["BatteryData"] as? [String: Any] ?? [:]
         func int(_ key: String) -> Int? { properties[key] as? Int ?? nested[key] as? Int }
+        // Signed values such as `Amperage` are published as their unsigned 64-bit bit pattern.
+        func signed(_ key: String) -> Int? {
+            (properties[key] as? NSNumber ?? nested[key] as? NSNumber).map { Int(truncatingIfNeeded: $0.int64Value) }
+        }
 
         if let installed = properties["BatteryInstalled"] as? Bool, !installed { return nil }
         guard let design = int("DesignCapacity"), design > 0 else { return nil }
@@ -69,5 +87,13 @@ public struct BatteryInfo: Hashable, Sendable {
         // Hundredths of a degree Celsius. Absent on recent macOS; the UI then uses the SMC battery sensor.
         self.celsius = int("Temperature").map { Double($0) / 100 }
         self.hasPermanentFailure = (int("PermanentFailureStatus") ?? 0) != 0
+
+        self.voltage = int("Voltage").flatMap { $0 > 0 ? Double($0) / 1000 : nil }
+        self.amperage = (signed("InstantAmperage") ?? signed("Amperage")).map { Double($0) / 1000 }
+        let adapter = properties["AdapterDetails"] as? [String: Any]
+        self.adapterWatts = (adapter?["Watts"] as? Int).flatMap { $0 > 0 ? $0 : nil }
+        // 65535 means "still estimating".
+        let minutes = isCharging ? int("AvgTimeToFull") : (isPluggedIn ? nil : int("TimeRemaining") ?? int("AvgTimeToEmpty"))
+        self.minutesRemaining = minutes.flatMap { $0 > 0 && $0 < 65535 ? $0 : nil }
     }
 }

@@ -16,6 +16,7 @@ struct MacFanApp: App {
         .defaultSize(width: 960, height: 660)
         .windowToolbarStyle(.unified)
         .commands {
+            NavigationCommands()
             CommandGroup(after: .appInfo) {
                 if model.updates.isAvailable {
                     Button("Check for Updates…") { model.updates.checkForUpdates() }

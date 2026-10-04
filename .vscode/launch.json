@@ -1,0 +1,64 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macfan}",
+            "name": "Debug MacFan",
+            "target": "MacFan",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MacFan"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macfan}",
+            "name": "Release MacFan",
+            "target": "MacFan",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MacFan"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macfan}",
+            "name": "Debug macfan-helper",
+            "target": "macfan-helper",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug macfan-helper"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macfan}",
+            "name": "Release macfan-helper",
+            "target": "macfan-helper",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release macfan-helper"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macfan}",
+            "name": "Debug macfanctl",
+            "target": "macfanctl",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug macfanctl"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macfan}",
+            "name": "Release macfanctl",
+            "target": "macfanctl",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release macfanctl"
+        }
+    ]
+}

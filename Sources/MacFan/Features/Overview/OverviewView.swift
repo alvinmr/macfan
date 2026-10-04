@@ -1,14 +1,16 @@
+import AppKit
 import MacFanCore
 import SwiftUI
 
 struct OverviewView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.showDetail) private var showDetail
     @Binding var destination: Destination
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                StatusHero(status: model.status, thermalState: model.thermalState)
+                StatusHero(status: model.status, thermalState: model.thermalState, busiestApp: model.busiestApp)
 
                 if !model.snapshot.fans.isEmpty {
                     FansOverviewCard(onManage: { destination = .fans })
@@ -20,12 +22,26 @@ struct OverviewView: View {
                     spacing: Theme.Spacing.l
                 ) {
                     ForEach(model.summaries.filter(\.category.isSafetyRelevant)) { summary in
-                        CategoryCard(
-                            summary: summary,
-                            history: model.history.values(for: HistoryStore.key(for: summary.category))
-                        )
+                        Button { showDetail(.category(summary.category)) } label: {
+                            CategoryCard(
+                                summary: summary,
+                                history: model.history.values(for: HistoryStore.key(for: summary.category))
+                            )
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .help("Show history")
+                    }
+                    if let watts = model.snapshot.systemPower {
+                        Button { showDetail(.systemPower) } label: {
+                            PowerCard(watts: watts, battery: model.snapshot.battery,
+                                      history: model.history.values(for: HistoryStore.systemPowerKey))
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .help("Show history")
                     }
                 }
+
+                ActivityCard()
 
                 Button {
                     destination = .sensors
@@ -40,6 +56,7 @@ struct OverviewView: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("Overview")
+        .whileVisible { await model.watchActivity() }
     }
 }
 
@@ -47,6 +64,7 @@ struct OverviewView: View {
 private struct StatusHero: View {
     let status: ThermalStatus
     let thermalState: ProcessInfo.ThermalState
+    let busiestApp: AppActivity?
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Spacing.l) {
@@ -64,6 +82,16 @@ private struct StatusHero: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // Warm or worse is when "why?" comes up; answer it with the app doing the work.
+                if status.level >= .warm, let busiestApp {
+                    Label {
+                        Text("Busiest app: \(busiestApp.displayName), \(CPUPercent.format(busiestApp.cpuPercent)) CPU")
+                    } icon: {
+                        AppIcon(app: busiestApp, size: 16)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
             }
 
             Spacer(minLength: Theme.Spacing.l)
@@ -107,6 +135,7 @@ private struct CategoryCard: View {
                     .lineLimit(1)
             }
         }
+        .contentShape(.rect(cornerRadius: Theme.Radius.card))
         .accessibilityElement(children: .combine)
     }
 
@@ -117,8 +146,168 @@ private struct CategoryCard: View {
     }
 }
 
+/// Same shape as the temperature cards, so the grid reads as one set.
+private struct PowerCard: View {
+    let watts: Double
+    let battery: BatteryInfo?
+    let history: [Double]
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                Label("Power Draw", systemImage: "bolt")
+                    .font(.headline)
+
+                Text(Watts.format(watts))
+                    .font(.system(size: 40, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+
+                Sparkline(values: history, tint: .yellow, minimumSpan: 10)
+                    .frame(height: 32)
+
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .contentShape(.rect(cornerRadius: Theme.Radius.card))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var caption: String {
+        guard let battery else { return String(localized: "Whole system") }
+        if battery.isPluggedIn {
+            return battery.adapterWatts.map { String(localized: "From a \($0) W adapter") } ?? String(localized: "On power adapter")
+        }
+        return battery.minutesRemaining.map { String(localized: "On battery · \(Duration.seconds($0 * 60).formatted(.units(allowed: [.hours, .minutes], width: .narrow))) left") }
+            ?? String(localized: "On battery")
+    }
+}
+
+/// "Why is my Mac warm?" — the apps doing the work right now.
+private struct ActivityCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                HStack {
+                    Label("Using the CPU", systemImage: "gauge.with.dots.needle.33percent")
+                        .font(.headline)
+                    Spacer()
+                    Button("Activity Monitor") {
+                        NSWorkspace.shared.open(URL(filePath: "/System/Applications/Utilities/Activity Monitor.app"))
+                    }
+                    .buttonStyle(.link)
+                    .font(.callout)
+                }
+
+                if model.topApps.isEmpty {
+                    Text("Measuring…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+                } else {
+                    VStack(spacing: Theme.Spacing.s) {
+                        ForEach(model.topApps) { app in
+                            AppActivityRow(app: app)
+                        }
+                    }
+                }
+
+                Text("100% is one CPU core fully busy. macOS shares details only for your own apps; everything else is counted under macOS.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+}
+
+struct AppActivityRow: View {
+    let app: AppActivity
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            AppIcon(app: app, size: 20)
+            Text(app.displayName).lineLimit(1)
+            Spacer(minLength: Theme.Spacing.s)
+            // Bar scaled to one core so a single busy app reads as "a lot".
+            Capsule()
+                .fill(.quaternary)
+                .frame(width: 80, height: 6)
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: 80 * min(app.cpuPercent / 100, 1), height: 6)
+                }
+            Text(CPUPercent.format(app.cpuPercent))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 48, alignment: .trailing)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var tint: Color {
+        switch app.cpuPercent {
+        case 100...: .red
+        case 50...: .orange
+        default: .accentColor
+        }
+    }
+}
+
+/// An app's Finder icon, or a generic one for command-line tools.
+struct AppIcon: View {
+    let app: AppActivity
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if app.isSystem {
+                Image(systemName: "applelogo")
+                    .foregroundStyle(.secondary)
+            } else if let path = app.bundlePath {
+                Image(nsImage: Self.icon(forFile: path))
+                    .resizable()
+            } else {
+                Image(systemName: "terminal")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    /// The list refreshes every few seconds; looking icons up each time would be wasted work.
+    private static var icons: [String: NSImage] = [:]
+
+    private static func icon(forFile path: String) -> NSImage {
+        if let icon = icons[path] { return icon }
+        if icons.count > 64 { icons.removeAll() }
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        icons[path] = icon
+        return icon
+    }
+}
+
+extension AppActivity {
+    var displayName: String {
+        isSystem ? String(localized: "macOS & system services") : name
+    }
+}
+
+enum CPUPercent {
+    /// "42%"
+    static func format(_ percent: Double) -> String {
+        "\(Int(percent.rounded()))%"
+    }
+}
+
 private struct FansOverviewCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.showDetail) private var showDetail
     let onManage: () -> Void
 
     var body: some View {
@@ -134,14 +323,19 @@ private struct FansOverviewCard: View {
 
                 HStack(spacing: Theme.Spacing.xxl) {
                     ForEach(model.snapshot.fans) { fan in
-                        HStack(spacing: Theme.Spacing.m) {
-                            FanGauge(load: fan.load)
-                                .frame(width: 44, height: 44)
-                            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                                Text(fan.name).font(.subheadline).foregroundStyle(.secondary)
-                                RPMText(rpm: fan.currentRPM, font: .title3.weight(.semibold))
+                        Button { showDetail(.fan(index: fan.index)) } label: {
+                            HStack(spacing: Theme.Spacing.m) {
+                                FanGauge(load: fan.load)
+                                    .frame(width: 44, height: 44)
+                                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                                    Text(fan.name).font(.subheadline).foregroundStyle(.secondary)
+                                    RPMText(rpm: fan.currentRPM, font: .title3.weight(.semibold))
+                                }
                             }
+                            .contentShape(.rect)
                         }
+                        .buttonStyle(PressableButtonStyle())
+                        .help("Show history")
                         .accessibilityElement(children: .combine)
                     }
                     Spacer(minLength: 0)
@@ -156,7 +350,7 @@ struct CoolingModeTag: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Text(text)
+        Text(Self.text(for: model.cooling.state, mode: model.preferences.cooling.mode))
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, Theme.Spacing.s)
@@ -164,12 +358,12 @@ struct CoolingModeTag: View {
             .background(.quaternary, in: .capsule)
     }
 
-    private var text: LocalizedStringKey {
-        switch model.cooling.state {
+    static func text(for state: FanControlEngine.State, mode: CoolingMode) -> LocalizedStringResource {
+        switch state {
         case .system: "Managed by macOS"
         case .emergency: "macOS (safety)"
         case .noData: "macOS (no data)"
-        case .controlling: model.preferences.cooling.mode.title
+        case .controlling: mode.title
         case .needsHelper: "Needs setup"
         case .failed: "Error"
         }

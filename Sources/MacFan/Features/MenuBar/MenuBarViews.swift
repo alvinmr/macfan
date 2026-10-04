@@ -9,26 +9,15 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.xs) {
-            Image(systemName: symbol)
-            if let text {
+            Image(systemName: model.menuBarContent.symbol)
+            if let text = model.menuBarContent.text {
                 Text(text).monospacedDigit()
             }
         }
-    }
-
-    private var symbol: String {
-        preferences.menuBarDisplay == .fanSpeed ? "fan" : (model.menuBarReading?.level ?? .cool).symbol
-    }
-
-    private var text: String? {
-        let temperature = model.menuBarReading.map { preferences.unit.format($0.celsius) }
-        let rpm = model.fastestFanRPM.map { "\(Int($0.rounded()).formatted())" }
-        switch preferences.menuBarDisplay {
-        case .temperature: return temperature
-        case .fanSpeed: return rpm ?? temperature
-        case .both: return [temperature, rpm].compactMap { $0 }.joined(separator: " · ")
-        case .iconOnly: return nil
-        }
+        // Settings take effect now rather than on the next refresh.
+        .onChange(of: preferences.menuBarDisplay) { model.updateMenuBarContent() }
+        .onChange(of: preferences.unit) { model.updateMenuBarContent() }
+        .onChange(of: preferences.menuBarSensorID) { model.updateMenuBarContent() }
     }
 }
 
@@ -50,6 +39,23 @@ struct MenuBarPanel: View {
                             .foregroundStyle(summary.level >= .hot ? summary.level.tint : .primary)
                     }
                 }
+                if let watts = model.snapshot.systemPower {
+                    HStack {
+                        Label("Power Draw", systemImage: "bolt")
+                        Spacer()
+                        Text(Watts.format(watts)).font(.body.weight(.medium)).monospacedDigit()
+                    }
+                }
+            }
+
+            if !model.topApps.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                    Text("Using the CPU").font(.caption).foregroundStyle(.secondary)
+                    ForEach(model.topApps.prefix(3)) { app in
+                        AppActivityRow(app: app)
+                    }
+                }
             }
 
             if !model.snapshot.fans.isEmpty {
@@ -62,6 +68,7 @@ struct MenuBarPanel: View {
         }
         .padding(Theme.Spacing.l)
         .frame(width: 300)
+        .whileVisible { await model.watchActivity() }
     }
 
     private var header: some View {

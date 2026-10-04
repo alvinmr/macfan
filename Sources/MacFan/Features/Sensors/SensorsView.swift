@@ -56,6 +56,7 @@ struct SensorsView: View {
 
 private struct SensorRow: View {
     @Environment(Preferences.self) private var preferences
+    @Environment(\.showDetail) private var showDetail
     let reading: SensorReading
     let history: [Double]
 
@@ -64,6 +65,12 @@ private struct SensorRow: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 HStack(spacing: Theme.Spacing.xs) {
                     Text(reading.sensor.name)
+                    if preferences.isPinned(reading.id) {
+                        Image(systemName: "pin.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help("Pinned to the sidebar")
+                    }
                     if isInMenuBar {
                         Image(systemName: "menubar.rectangle")
                             .foregroundStyle(.secondary)
@@ -86,7 +93,14 @@ private struct SensorRow: View {
         }
         .padding(.vertical, Theme.Spacing.xxs)
         .contentShape(Rectangle())
+        .onTapGesture { showDetail(.sensor(id: reading.id)) }
+        .help("Click for history")
         .contextMenu {
+            Button("Show History") { showDetail(.sensor(id: reading.id)) }
+            Button(preferences.isPinned(reading.id) ? "Unpin from Sidebar" : "Pin to Sidebar") {
+                preferences.togglePin(reading.id)
+            }
+            Divider()
             Button(isInMenuBar ? "Show Hottest CPU in Menu Bar" : "Show in Menu Bar") {
                 preferences.menuBarSensorID = isInMenuBar ? nil : reading.id
             }
@@ -100,6 +114,8 @@ private struct SensorRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { showDetail(.sensor(id: reading.id)) }
         .accessibilityLabel(Text(reading.sensor.name))
         .accessibilityValue(Text("\(preferences.unit.format(reading.celsius, fractionDigits: 1)), \(Text(reading.level.label))"))
     }

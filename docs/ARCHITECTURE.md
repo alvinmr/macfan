@@ -23,7 +23,7 @@ assembles the `.app` bundle from the package's products.
 1. **Reading never needs privileges; writing always goes through the helper.** The app
    process never writes to the SMC.
 2. **Decisions are pure.** `CoolingPlanner`, `SpeedGovernor`, `SafetyPolicy`, `FanCurve`,
-   `SensorCatalog` and `BatteryInfo(properties:)` take values and return values. They are
+   `SensorCatalog`, `ActivityTracker` and `BatteryInfo(properties:)` take values and return values. They are
    where the interesting logic lives and they are covered by tests. Keep I/O out of them.
 3. **macOS is the safe default.** Every unusual situation — no data, emergency, sleep,
    quit, crash, lost connection — ends with the fans back under macOS control.
@@ -50,8 +50,12 @@ Private symbols are bound with `__asm` labels so they never collide with IOKit's
   `HIDSensorProvider`, `CompositeSensorProvider` (HID only fills categories SMC misses),
   `HardwareMonitor` (actor; one call → one `HardwareSnapshot`).
 - **Control** — `FanCurve`, `CurvePreset`, `CoolingSettings`, `CoolingPlanner`,
-  `SpeedGovernor`, `SafetyPolicy`.
-- **History** — `RingBuffer`, `HistoryStore` (sparklines).
+  `SpeedGovernor`, `SafetyPolicy`, `PowerProfiles` (a mode per power source).
+- **History** — `RingBuffer`, `HistoryStore` (raw samples for sparklines, 10-second
+  averages for the last hour, peaks; memory stays flat however long MacFan runs).
+- **Activity** — `ActivityTracker` (pure: process CPU time → per-app CPU %, helpers
+  folded into their app) and `ActivityMonitor` (actor; reads `libproc`). The app only
+  samples while a view showing the result is on screen.
 - **Logging** — `CSVLogger` (actor).
 
 ### `MacFanXPC`

@@ -9,7 +9,7 @@ struct BatteryView: View {
             if let battery = model.snapshot.battery {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     HealthHero(battery: battery)
-                    BatteryFacts(battery: battery, temperature: temperature(of: battery))
+                    BatteryFacts(battery: battery, temperature: temperature(of: battery), systemPower: model.snapshot.systemPower)
                 }
                 .padding(Theme.Spacing.xl)
                 .frame(maxWidth: 900)
@@ -76,6 +76,13 @@ private struct BatteryFacts: View {
     @Environment(Preferences.self) private var preferences
     let battery: BatteryInfo
     let temperature: Double?
+    let systemPower: Double?
+
+    /// Small currents are measurement noise around "full and idle".
+    private var batteryFlow: (title: LocalizedStringKey, value: String)? {
+        guard let watts = battery.power, abs(watts) >= 0.5 else { return nil }
+        return watts > 0 ? ("Charging at", Watts.format(watts)) : ("Draining at", Watts.format(-watts))
+    }
 
     var body: some View {
         Card {
@@ -89,7 +96,29 @@ private struct BatteryFacts: View {
                 }
                 Divider()
                 row("Power source") {
-                    Text(battery.isPluggedIn ? (battery.isCharging ? "Power adapter · charging" : "Power adapter") : "Battery")
+                    if battery.isPluggedIn, let watts = battery.adapterWatts {
+                        Text(battery.isCharging ? "\(watts) W adapter · charging" : "\(watts) W adapter")
+                    } else {
+                        Text(battery.isPluggedIn ? (battery.isCharging ? "Power adapter · charging" : "Power adapter") : "Battery")
+                    }
+                }
+                if let flow = batteryFlow {
+                    Divider()
+                    row(flow.title) {
+                        Text(flow.value).monospacedDigit()
+                    }
+                }
+                if let minutes = battery.minutesRemaining {
+                    Divider()
+                    row(battery.isCharging ? "Until full" : "Time left") {
+                        Text(Duration.seconds(minutes * 60).formatted(.units(allowed: [.hours, .minutes], width: .wide)))
+                    }
+                }
+                if let systemPower {
+                    Divider()
+                    row("Mac is using") {
+                        Text(Watts.format(systemPower)).monospacedDigit()
+                    }
                 }
                 Divider()
                 row("Cycle count") {

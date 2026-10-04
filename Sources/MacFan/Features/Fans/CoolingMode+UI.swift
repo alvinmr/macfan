@@ -2,7 +2,7 @@ import MacFanCore
 import SwiftUI
 
 extension CoolingMode {
-    var title: LocalizedStringKey {
+    var title: LocalizedStringResource {
         switch self {
         case .automatic: "Automatic"
         case .curve: "Smart Curve"

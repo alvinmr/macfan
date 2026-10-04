@@ -6,12 +6,15 @@ public struct HardwareSnapshot: Sendable {
     public var readings: [SensorReading]
     public var fans: [FanStatus]
     public var battery: BatteryInfo?
+    /// Whole-system power draw in watts, where the SMC reports it (Apple Silicon).
+    public var systemPower: Double?
 
-    public init(date: Date, readings: [SensorReading], fans: [FanStatus], battery: BatteryInfo?) {
+    public init(date: Date, readings: [SensorReading], fans: [FanStatus], battery: BatteryInfo?, systemPower: Double? = nil) {
         self.date = date
         self.readings = readings
         self.fans = fans
         self.battery = battery
+        self.systemPower = systemPower
     }
 
     public static let empty = HardwareSnapshot(date: .distantPast, readings: [], fans: [], battery: nil)

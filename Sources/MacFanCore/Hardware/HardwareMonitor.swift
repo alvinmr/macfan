@@ -8,9 +8,14 @@ import SMCKit
 /// SMC keys (~0.5 s), which would hang the UI, and because it owns non-`Sendable`
 /// providers that must only ever be touched from one place.
 public actor HardwareMonitor {
-    /// The battery changes slowly and its IORegistry read is comparatively expensive.
-    private static let batteryRefreshInterval: TimeInterval = 30
+    /// Health changes slowly, but charge rate and time left are live numbers. A full
+    /// IORegistry read takes about 0.3 ms on an M1 Pro, so every few seconds costs nothing.
+    private static let batteryRefreshInterval: TimeInterval = 5
 
+    /// Total system power. Apple Silicon and some Intel Macs publish it; others don't have the key.
+    private static let systemPowerKey: SMCKey = "PSTR"
+
+    private let smc: SMCConnection?
     private let sensorProvider: CompositeSensorProvider
     private let fanControl: SMCFanControl<SMCConnection>?
     private var sensors: [Sensor]?
@@ -18,6 +23,7 @@ public actor HardwareMonitor {
 
     public init() {
         let smc = try? SMCConnection()
+        self.smc = smc
         sensorProvider = CompositeSensorProvider(smc: smc)
         fanControl = smc.map { SMCFanControl(smc: $0) }
     }
@@ -31,7 +37,8 @@ public actor HardwareMonitor {
             date: date,
             readings: sensorProvider.read(sensors),
             fans: readFans(),
-            battery: readBattery(at: date)
+            battery: readBattery(at: date),
+            systemPower: readSystemPower()
         )
     }
 
@@ -60,6 +67,16 @@ public actor HardwareMonitor {
                 hasKnownLimits: limits != nil
             )
         }
+    }
+
+    /// Re-reads the battery on the next snapshot, e.g. right after the power source changed.
+    public func invalidateBattery() {
+        battery = nil
+    }
+
+    private func readSystemPower() -> Double? {
+        guard let watts = smc?.double(Self.systemPowerKey), watts.isFinite, watts > 0, watts < 1000 else { return nil }
+        return watts
     }
 
     private func readBattery(at date: Date) -> BatteryInfo? {
