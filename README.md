@@ -156,21 +156,9 @@ See [Adding sensors](docs/ADDING_SENSORS.md) — it's usually a one-line change.
 - Ad-hoc builds can only pin the client's bundle identifier. Distributed builds should
   be signed with a Developer ID and notarized so the helper also pins the team.
 
-## Project layout
+## Contributing
 
-| Module | What it does |
-| --- | --- |
-| `CPrivateIOKit` | C declarations: SMC parameter block, private HID temperature API |
-| `SMCKit` | Talks to the SMC: keys, value encoding, fan control |
-| `MacFanCore` | Domain logic: sensors, catalog, curves, safety, history, logging. No UI. |
-| `MacFanXPC` | The app ↔ helper contract |
-| `MacFanHelper` | The root daemon |
-| `MacFanCLI` | The `macfan` command |
-| `MacFan` | The SwiftUI app |
-
-More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); how releases are cut is in
-[docs/RELEASING.md](docs/RELEASING.md). Contributions are welcome —
-see [CONTRIBUTING.md](CONTRIBUTING.md).
+Ideas, bug reports and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Disclaimer
 
