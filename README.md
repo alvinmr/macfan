@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/alvinmr/macfan/releases/latest/download/MacFan-macOS.dmg"><b>Download MacFan</b></a>
+  <a href="https://github.com/alvinmr/macfan/releases"><b>Download MacFan</b></a>
 </p>
 
 A free, open-source temperature monitor and fan controller for the Mac.
@@ -56,12 +56,16 @@ click deeper.
 
 ## Download
 
-Get `MacFan-v<version>-macOS.dmg` from the
-[latest release](https://github.com/alvinmr/macfan/releases/latest). One download runs
+Get `MacFan-v<version>-macOS.dmg` from
+[Releases](https://github.com/alvinmr/macfan/releases). One download runs
 on **Apple Silicon and Intel**, on **macOS 14 Sonoma or later**.
 
 1. Open the DMG and drag **MacFan** to **Applications**.
 2. Open MacFan from Applications.
+
+> **0.1.0 is a pre-release.** Monitoring is solid; fan control has only been tested on
+> the developer's Mac so far. Please [report](https://github.com/alvinmr/macfan/issues)
+> how it behaves on yours.
 
 MacFan is not yet notarized by Apple, so the first time you open it macOS will block it.
 If you trust the download, go to **System Settings → Privacy & Security** and click
