@@ -15,15 +15,34 @@ final class AppModel {
     let updates = UpdateManager()
     let cooling: FanControlEngine
 
-    private(set) var snapshot = HardwareSnapshot.empty
-    private(set) var history = HistoryStore()
+    /// The latest readings. Always current for code that asks; views reading it are only
+    /// refreshed while some window or the menu bar panel is on screen (see `keepDisplayCurrent`).
+    var snapshot: HardwareSnapshot {
+        _ = displayRevision
+        return liveSnapshot
+    }
+
+    /// Like `snapshot`: always recorded, but only pushed to views while they can be seen.
+    var history: HistoryStore {
+        _ = displayRevision
+        return liveHistory
+    }
     private(set) var thermalState = ProcessInfo.processInfo.thermalState
     private(set) var hasStarted = false
     /// Busiest apps, busiest first. Only kept current while a view showing them is on screen.
     private(set) var topApps: [AppActivity] = []
+    /// How busy the whole Mac is, 0…100. Kept current alongside `topApps`.
+    private(set) var cpuBusy: Double?
     /// What the menu bar shows. Assigned only when it changes, so the status item isn't
     /// redrawn on every refresh.
     private(set) var menuBarContent = MenuBarContent(symbol: "thermometer.medium", text: nil)
+
+    @ObservationIgnored private var liveSnapshot = HardwareSnapshot.empty
+    @ObservationIgnored private var liveHistory = HistoryStore()
+    /// Bumped on each refresh while UI is visible. Hidden SwiftUI views still re-render and
+    /// re-measure when what they read changes, so readings only reach views through this.
+    private var displayRevision = 0
+    @ObservationIgnored private var visibleViews = 0
 
     @ObservationIgnored private let monitor = HardwareMonitor()
     @ObservationIgnored private let activity = ActivityMonitor()
@@ -99,9 +118,10 @@ final class AppModel {
         snapshot.fans.map(\.currentRPM).max()
     }
 
-    /// The app most worth mentioning when the Mac is warm: busy enough to matter.
+    /// The app most worth mentioning when the Mac is warm: busy enough to matter (half a
+    /// core or more), and something the user could quit, so never macOS itself.
     var busiestApp: AppActivity? {
-        topApps.first.flatMap { $0.cpuPercent >= 50 ? $0 : nil }
+        topApps.first { !$0.isSystemComponent && $0.cpuPercent >= 50 }
     }
 
     func updateMenuBarContent() {
@@ -116,6 +136,20 @@ final class AppModel {
         case .iconOnly: MenuBarContent(symbol: (reading?.level ?? .cool).symbol, text: nil)
         }
         if content != menuBarContent { menuBarContent = content }
+    }
+
+    // MARK: Visibility
+
+    /// Keeps views supplied with fresh readings for as long as the calling task runs. Use from
+    /// `whileVisible` at the root of each window, so nothing off screen is recomputed.
+    func keepDisplayCurrent() async {
+        visibleViews += 1
+        // Catch up at once: readings kept arriving while nothing was shown.
+        displayRevision &+= 1
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(3600))
+        }
+        visibleViews -= 1
     }
 
     // MARK: App activity
@@ -133,7 +167,10 @@ final class AppModel {
             try? await Task.sleep(for: .seconds(3600))
         }
         activityWatchers -= 1
-        if activityWatchers == 0 { topApps = [] }
+        if activityWatchers == 0 {
+            topApps = []
+            cpuBusy = nil
+        }
     }
 
     private func sampleActivity() async {
@@ -143,6 +180,7 @@ final class AppModel {
         lastActivitySample = now
         if let apps = await activity.sample(at: now), activityWatchers > 0 {
             topApps = Array(apps.prefix(5))
+            cpuBusy = min(apps.map(\.shareOfMac).reduce(0, +), 100)
         }
         log.debug("Sampled app activity for \(self.activityWatchers) visible view(s)")
     }
@@ -153,10 +191,11 @@ final class AppModel {
 
     private func tick() async {
         let snapshot = await monitor.snapshot()
-        self.snapshot = snapshot
-        history.record(snapshot)
+        liveSnapshot = snapshot
+        liveHistory.record(snapshot)
         thermalState = ProcessInfo.processInfo.thermalState
         hasStarted = true
+        if visibleViews > 0 { displayRevision &+= 1 }
 
         updateMenuBarContent()
         if activityWatchers > 0 { await sampleActivity() }

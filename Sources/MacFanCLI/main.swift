@@ -69,7 +69,7 @@ case "apps":
     let cost = ContinuousClock.now - start
     try? await Task.sleep(for: .seconds(2))
     for app in (await activity.sample() ?? []).prefix(10) {
-        print(String(format: "%6.1f%%  ", app.cpuPercent) + "\(app.name)  \(app.id)")
+        print(String(format: "%5.1f%% of Mac  %6.1f%% of a core  ", app.shareOfMac, app.cpuPercent) + "\(app.name)  \(app.id)")
     }
     print("(one sample took \(cost.formatted(.units(allowed: [.milliseconds], fractionalPart: .show(length: 2)))))")
 

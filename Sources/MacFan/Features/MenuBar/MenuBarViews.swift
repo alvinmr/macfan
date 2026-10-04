@@ -68,6 +68,7 @@ struct MenuBarPanel: View {
         }
         .padding(Theme.Spacing.l)
         .frame(width: 300)
+        .whileVisible { await model.keepDisplayCurrent() }
         .whileVisible { await model.watchActivity() }
     }
 

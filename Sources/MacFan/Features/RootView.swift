@@ -71,6 +71,7 @@ struct RootView: View {
             case .battery: BatteryView()
             }
         }
+        .whileVisible { await model.keepDisplayCurrent() }
         .environment(\.showDetail, ShowDetailAction { detail = $0 })
         .sheet(item: $detail) { target in
             HistoryDetailView(target: target)

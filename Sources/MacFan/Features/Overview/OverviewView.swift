@@ -85,7 +85,7 @@ private struct StatusHero: View {
                 // Warm or worse is when "why?" comes up; answer it with the app doing the work.
                 if status.level >= .warm, let busiestApp {
                     Label {
-                        Text("Busiest app: \(busiestApp.displayName), \(CPUPercent.format(busiestApp.cpuPercent)) CPU")
+                        Text("Busiest app: \(busiestApp.displayName), \(CPUPercent.format(busiestApp.shareOfMac)) of the CPU")
                     } icon: {
                         AppIcon(app: busiestApp, size: 16)
                     }
@@ -195,6 +195,12 @@ private struct ActivityCard: View {
                 HStack {
                     Label("Using the CPU", systemImage: "gauge.with.dots.needle.33percent")
                         .font(.headline)
+                    if let busy = model.cpuBusy {
+                        Text("Mac is \(CPUPercent.format(busy)) busy")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                     Spacer()
                     Button("Activity Monitor") {
                         NSWorkspace.shared.open(URL(filePath: "/System/Applications/Utilities/Activity Monitor.app"))
@@ -216,7 +222,7 @@ private struct ActivityCard: View {
                     }
                 }
 
-                Text("100% is one CPU core fully busy. macOS shares details only for your own apps; everything else is counted under macOS.")
+                Text("Share of your Mac's total processing power. macOS reports details only for your own apps; the rest is counted under macOS.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -232,16 +238,16 @@ struct AppActivityRow: View {
             AppIcon(app: app, size: 20)
             Text(app.displayName).lineLimit(1)
             Spacer(minLength: Theme.Spacing.s)
-            // Bar scaled to one core so a single busy app reads as "a lot".
+            // The whole bar is the whole Mac, so lengths add up the way the numbers do.
             Capsule()
                 .fill(.quaternary)
                 .frame(width: 80, height: 6)
                 .overlay(alignment: .leading) {
                     Capsule()
                         .fill(tint)
-                        .frame(width: 80 * min(app.cpuPercent / 100, 1), height: 6)
+                        .frame(width: 80 * min(app.shareOfMac / 100, 1), height: 6)
                 }
-            Text(CPUPercent.format(app.cpuPercent))
+            Text(CPUPercent.format(app.shareOfMac))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 48, alignment: .trailing)
@@ -250,9 +256,9 @@ struct AppActivityRow: View {
     }
 
     private var tint: Color {
-        switch app.cpuPercent {
-        case 100...: .red
-        case 50...: .orange
+        switch app.shareOfMac {
+        case 50...: .red
+        case 25...: .orange
         default: .accentColor
         }
     }
@@ -272,7 +278,7 @@ struct AppIcon: View {
                 Image(nsImage: Self.icon(forFile: path))
                     .resizable()
             } else {
-                Image(systemName: "terminal")
+                Image(systemName: app.isSystemComponent ? "gearshape" : "terminal")
                     .foregroundStyle(.secondary)
             }
         }
@@ -299,9 +305,9 @@ extension AppActivity {
 }
 
 enum CPUPercent {
-    /// "42%"
+    /// "42%", or "<1%" for a sliver that would otherwise read as nothing.
     static func format(_ percent: Double) -> String {
-        "\(Int(percent.rounded()))%"
+        percent > 0 && percent < 0.5 ? "<1%" : "\(Int(percent.rounded()))%"
     }
 }
 
