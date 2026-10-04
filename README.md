@@ -102,16 +102,6 @@ make test    # unit tests
 Or from source without bundling: `swift run MacFan` (alerts and helper installation
 need the bundled app).
 
-### App icon
-
-The icon artwork (`Resources/Icon/artwork.png`) was generated with an image model from
-`Resources/Icon/prompt.txt`; `make icon` clips it to the macOS icon shape and builds
-`Resources/AppIcon.icns`. To regenerate the artwork with any OpenAI-compatible endpoint:
-
-```sh
-OPENAI_API_KEY=sk-... scripts/generate-icon-art.sh && make icon
-```
-
 ### Command line
 
 ```sh
