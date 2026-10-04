@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/alvinmr/macfan/compare/v0.2.0...v0.3.0) (2026-10-04)
+
+
+### Features
+
+* add Insights with hot moments and cooling health learning ([31bc722](https://github.com/alvinmr/macfan/commit/31bc722470279e01f6e45203961533de4112514e))
+* add Insights with hot moments and cooling health learning ([28c80df](https://github.com/alvinmr/macfan/commit/28c80df08bdf5171eb972e99959aa78dcc21efd3))
+
+
+### Bug Fixes
+
+* show CPU use as a share of the whole Mac, with recognisable names ([4716326](https://github.com/alvinmr/macfan/commit/4716326c68396e8dcda10897b8469f658bd413ba))
+* stop hidden UI from redrawing, and show CPU as a share of the whole Mac ([2a9372f](https://github.com/alvinmr/macfan/commit/2a9372f0b18a74fe40f4946c9f7320f9904c4a22))
+* stop redrawing windows and the menu bar panel nobody can see ([8bfd6da](https://github.com/alvinmr/macfan/commit/8bfd6da67053f9d0be6a4fbc16e3cb5379fd9eaa))
+
 ## [0.2.0](https://github.com/alvinmr/macfan/compare/v0.1.2...v0.2.0) (2026-10-04)
 
 
