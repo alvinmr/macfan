@@ -29,7 +29,7 @@ final class AppModel {
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     private init() {
-        cooling = FanControlEngine(helper: helper)
+        cooling = FanControlEngine(commander: helper)
     }
 
     var logDirectory: URL { logger.directory }

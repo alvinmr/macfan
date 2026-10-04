@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import os
+import MacFanCore
 import MacFanXPC
 import Observation
 import ServiceManagement
@@ -109,31 +110,47 @@ final class HelperManager {
         try? await restoreSystemControl()
     }
 
-    /// Blocks for at most `timeout`. Only for app termination, where async work can't finish.
-    func restoreSystemControlBlocking(timeout: TimeInterval = 2) {
+    /// Blocks for at most two seconds. Only for app termination, where async work can't finish.
+    ///
+    /// Uses the *asynchronous* proxy on purpose: its reply and error handlers run on XPC's
+    /// own queue, so the main thread can wait on the semaphore with a real deadline. A
+    /// synchronous proxy would block inside the call itself, before any timeout applied.
+    func restoreSystemControlBlocking() {
         guard isReady else { return }
         let done = DispatchSemaphore(value: 0)
-        let proxy = activeConnection().synchronousRemoteObjectProxyWithErrorHandler { @Sendable _ in done.signal() }
-        (proxy as? MacFanHelperProtocol)?.restoreSystemControl { _ in done.signal() }
-        _ = done.wait(timeout: .now() + timeout)
+        let proxy = activeConnection().remoteObjectProxyWithErrorHandler { @Sendable _ in done.signal() }
+        (proxy as? MacFanHelperProtocol)?.restoreSystemControl { @Sendable _ in done.signal() }
+        _ = done.wait(timeout: .now() + 2)
     }
 
     // MARK: XPC plumbing
 
+    /// Every call has a deadline: a helper that is connected but stuck must not stall the
+    /// polling loop forever.
     private func call<T: Sendable>(
+        timeout: Duration = .seconds(5),
         _ body: (MacFanHelperProtocol, @escaping @Sendable (Result<T, Error>) -> Void) -> Void
     ) async throws -> T {
         let connection = activeConnection()
         return try await withCheckedThrowingContinuation { continuation in
             let gate = ResumeOnce(continuation)
+            let deadline = Task {
+                do { try await Task.sleep(for: timeout) } catch { return }
+                gate.resume(with: .failure(HelperError.timedOut))
+            }
             let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable error in
+                deadline.cancel()
                 gate.resume(with: .failure(error))
             }
             guard let helper = proxy as? MacFanHelperProtocol else {
+                deadline.cancel()
                 gate.resume(with: .failure(CocoaError(.featureUnsupported)))
                 return
             }
-            body(helper) { gate.resume(with: $0) }
+            body(helper) { result in
+                deadline.cancel()
+                gate.resume(with: result)
+            }
         }
     }
 
@@ -144,13 +161,38 @@ final class HelperManager {
         // XPC calls handlers on its own queue. They must be @Sendable, or Swift infers
         // main-actor isolation from this context and traps at runtime when they run.
         connection.invalidationHandler = { @Sendable [weak self] in
-            Task { @MainActor in self?.connection = nil }
+            Task { @MainActor in self?.connectionLost(invalidated: true) }
+        }
+        connection.interruptionHandler = { @Sendable [weak self] in
+            Task { @MainActor in self?.connectionLost(invalidated: false) }
         }
         connection.resume()
         self.connection = connection
         return connection
     }
+
+    /// The helper exited, crashed or restarted. Stop relying on it until its version is
+    /// confirmed again. Only a *ready* helper triggers a re-check, so a helper that isn't
+    /// installed can't cause a loop of failed connections.
+    private func connectionLost(invalidated: Bool) {
+        if invalidated { connection = nil }
+        guard status == .ready else { return }
+        status = .unknown
+        Task { await refresh() }
+    }
 }
+
+enum HelperError: LocalizedError {
+    case timedOut
+
+    var errorDescription: String? {
+        switch self {
+        case .timedOut: String(localized: "The fan control helper didn't respond in time.")
+        }
+    }
+}
+
+extension HelperManager: FanCommanding {}
 
 /// XPC can report both an error and a reply for one call, from its own queue; a
 /// continuation must resume exactly once. `nonisolated` because it is never touched

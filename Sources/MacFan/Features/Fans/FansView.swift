@@ -17,6 +17,7 @@ struct FansView: View {
                 } else {
                     LiveFansSection()
                     ModePicker()
+                    CoolingStatusBanner()
                     if model.preferences.cooling.mode.requiresHelper && !model.helper.isReady {
                         HelperSetupCard()
                     }
@@ -117,6 +118,53 @@ private struct ModeCard: View {
         .buttonStyle(PressableButtonStyle())
         .fluidAnimation(value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+// MARK: - Status
+
+/// Explains, in plain words, whenever MacFan isn't doing what the selected mode says.
+private struct CoolingStatusBanner: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let content {
+            Card {
+                Label {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                        Text(content.title).font(.headline)
+                        Text(content.detail)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } icon: {
+                    Image(systemName: content.symbol)
+                        .foregroundStyle(content.tint)
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private var content: (title: LocalizedStringKey, detail: String, symbol: String, tint: Color)? {
+        guard model.preferences.cooling.mode != .automatic else { return nil }
+        switch model.cooling.state {
+        case .emergency:
+            return ("macOS is cooling your Mac",
+                    String(localized: "Something got critically hot, so macOS took over the fans. Your setting resumes once it has cooled down."),
+                    "flame", .orange)
+        case .noData:
+            return ("Waiting for temperature readings",
+                    String(localized: "MacFan can't read the temperatures it needs, so macOS is in charge of the fans until it can."),
+                    "thermometer.medium.slash", .secondary)
+        case .failed(let message):
+            return ("Fan control ran into a problem",
+                    String(localized: "\(message). MacFan keeps retrying and hands the fans back to macOS whenever it can't apply your setting."),
+                    "exclamationmark.triangle.fill", .red)
+        case .system, .controlling, .needsHelper:
+            return nil
+        }
     }
 }
 

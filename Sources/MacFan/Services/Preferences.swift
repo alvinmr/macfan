@@ -65,17 +65,23 @@ final class Preferences {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         unit = defaults.string(forKey: Key.unit).flatMap(TemperatureUnit.init) ?? Self.localeUnit
-        refreshInterval = defaults.object(forKey: Key.refreshInterval) as? Double ?? 2
+        // Numbers read from disk are only trusted if they're one of the values the UI offers.
+        refreshInterval = Self.validated(defaults.object(forKey: Key.refreshInterval), allowed: [1, 2, 5], default: 2)
         menuBarDisplay = defaults.string(forKey: Key.menuBarDisplay).flatMap(MenuBarDisplay.init) ?? .temperature
         menuBarSensorID = defaults.string(forKey: Key.menuBarSensorID)
         showsUnidentifiedSensors = defaults.bool(forKey: Key.showsUnidentifiedSensors)
         showsDockIcon = defaults.object(forKey: Key.showsDockIcon) as? Bool ?? true
         alertsEnabled = defaults.bool(forKey: Key.alertsEnabled)
-        alertThreshold = defaults.object(forKey: Key.alertThreshold) as? Double ?? 95
+        alertThreshold = Self.validated(defaults.object(forKey: Key.alertThreshold), allowed: Set((70...105).map(Double.init)), default: 95)
         loggingEnabled = defaults.bool(forKey: Key.loggingEnabled)
-        loggingInterval = defaults.object(forKey: Key.loggingInterval) as? Double ?? 10
+        loggingInterval = Self.validated(defaults.object(forKey: Key.loggingInterval), allowed: [5, 10, 60], default: 10)
         cooling = defaults.data(forKey: Key.cooling)
             .flatMap { try? JSONDecoder().decode(CoolingSettings.self, from: $0) } ?? CoolingSettings()
+    }
+
+    private static func validated(_ stored: Any?, allowed: Set<Double>, default fallback: Double) -> Double {
+        guard let value = stored as? Double, allowed.contains(value) else { return fallback }
+        return value
     }
 
     private static var localeUnit: TemperatureUnit {
