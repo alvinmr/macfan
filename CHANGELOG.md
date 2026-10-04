@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/alvinmr/macfan/compare/v0.1.2...v0.2.0) (2026-10-04)
+
+
+### Features
+
+* show what's warming the Mac, history, power draw and pinned sensors ([3d9f5f3](https://github.com/alvinmr/macfan/commit/3d9f5f3978a31dce15a3f163902f5e5d3ca09aec))
+* show what's warming the Mac, history, power draw and pinned sensors ([6bf346a](https://github.com/alvinmr/macfan/commit/6bf346a06e5d0fc0ba8b98a9e3c04408c93efb68))
+
+
+### Bug Fixes
+
+* stop MacFan from heating the Mac it watches ([a67f64f](https://github.com/alvinmr/macfan/commit/a67f64f4dbdf07cf1bd20f7be731bd41b0ba1184))
+
 ## [0.1.2](https://github.com/alvinmr/macfan/compare/v0.1.1...v0.1.2) (2026-10-04)
 
 
