@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds Resources/AppIcon.icns from Resources/Icon/artwork.png.
-# To change the artwork itself, see scripts/generate-icon-art.sh.
+# Only needed if Resources/Icon/artwork.png changes.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
