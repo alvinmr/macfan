@@ -27,6 +27,18 @@ final class AppModel {
         _ = displayRevision
         return liveHistory
     }
+    /// Hot moments and cooling history. Like `snapshot`, only pushed to views while visible.
+    var insights: InsightsData {
+        _ = displayRevision
+        return liveInsights
+    }
+
+    /// The hot moment happening right now, if any.
+    var hotMomentInProgress: HotMoment? {
+        _ = displayRevision
+        return hotMoments.inProgress
+    }
+
     private(set) var thermalState = ProcessInfo.processInfo.thermalState
     private(set) var hasStarted = false
     /// Busiest apps, busiest first. Only kept current while a view showing them is on screen.
@@ -43,6 +55,14 @@ final class AppModel {
     /// re-measure when what they read changes, so readings only reach views through this.
     private var displayRevision = 0
     @ObservationIgnored private var visibleViews = 0
+
+    @ObservationIgnored private var liveInsights = InsightsData()
+    @ObservationIgnored private var hotMoments = HotMomentRecorder()
+    @ObservationIgnored private var coolingSampler = CoolingSampler()
+    @ObservationIgnored private var cpuShare = CPUShareMeter()
+    @ObservationIgnored private let insightsFile = InsightsFile()
+    @ObservationIgnored private var insightsChanged = false
+    @ObservationIgnored private var lastInsightsSave = Date()
 
     @ObservationIgnored private let monitor = HardwareMonitor()
     @ObservationIgnored private let activity = ActivityMonitor()
@@ -68,6 +88,7 @@ final class AppModel {
 
     func start() {
         guard loop == nil else { return }
+        liveInsights = insightsFile.load()
         observeSystemEvents()
         observePowerSource()
         loop = Task { [weak self] in
@@ -90,6 +111,7 @@ final class AppModel {
     func prepareForTermination() {
         loop?.cancel()
         cooling.shutdown()
+        saveInsights()
         Task { await logger.close() }
     }
 
@@ -159,7 +181,6 @@ final class AppModel {
     func watchActivity() async {
         activityWatchers += 1
         if activityWatchers == 1 {
-            await activity.reset()
             lastActivitySample = .distantPast
             await sampleActivity()
         }
@@ -173,19 +194,24 @@ final class AppModel {
         }
     }
 
+    /// Walks the process list when a visible view shows the result, or a hot moment may be
+    /// under way. Never otherwise.
     private func sampleActivity() async {
         let now = Date()
+        let elapsed = now.timeIntervalSince(lastActivitySample)
         // Process CPU time is cumulative, so sampling less often loses nothing but latency.
-        guard now.timeIntervalSince(lastActivitySample) >= Self.activityInterval else { return }
+        guard elapsed >= (activityWatchers > 0 ? 3.5 : 10) else { return }
+        // After a long pause the previous totals would average over minutes; start afresh.
+        if elapsed > 30 { await activity.reset() }
         lastActivitySample = now
-        if let apps = await activity.sample(at: now), activityWatchers > 0 {
+        guard let apps = await activity.sample(at: now) else { return }
+        if activityWatchers > 0 {
             topApps = Array(apps.prefix(5))
             cpuBusy = min(apps.map(\.shareOfMac).reduce(0, +), 100)
         }
-        log.debug("Sampled app activity for \(self.activityWatchers) visible view(s)")
+        hotMoments.record(apps)
+        log.debug("Sampled app activity (\(self.activityWatchers) visible view(s), hot moment: \(self.hotMoments.wantsActivity))")
     }
-
-    private static let activityInterval: TimeInterval = 3.5
 
     // MARK: Tick
 
@@ -198,7 +224,8 @@ final class AppModel {
         if visibleViews > 0 { displayRevision &+= 1 }
 
         updateMenuBarContent()
-        if activityWatchers > 0 { await sampleActivity() }
+        updateInsights(with: snapshot)
+        if activityWatchers > 0 || hotMoments.wantsActivity { await sampleActivity() }
 
         await cooling.update(settings: preferences.cooling, snapshot: snapshot)
         alerts.evaluate(snapshot, preferences: preferences, unit: preferences.unit)
@@ -211,6 +238,54 @@ final class AppModel {
                 log.error("CSV logging failed: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    // MARK: Insights
+
+    private func updateInsights(with snapshot: HardwareSnapshot) {
+        let isThrottling = thermalState == .serious || thermalState == .critical
+        if let moment = hotMoments.update(snapshot, isThrottling: isThrottling) {
+            liveInsights.add(moment)
+            insightsChanged = true
+            saveInsights()
+        }
+
+        // Watts where the Mac reports them; otherwise how busy the CPU is.
+        let load: Double?
+        let kind: CoolingLog.LoadKind
+        if let watts = snapshot.systemPower {
+            load = watts
+            kind = .watts
+        } else {
+            load = CPULoad.current().flatMap { cpuShare.update($0) }
+            kind = .cpuShare
+        }
+        let fansByMacOS = if case .controlling = cooling.state { false } else { true }
+        if let sample = coolingSampler.add(snapshot, load: load, fansByMacOS: fansByMacOS) {
+            liveInsights.cooling.add(sample, kind: kind)
+            insightsChanged = true
+            log.debug("Cooling sample: load \(sample.load, format: .fixed(precision: 1)), rise \(sample.rise, format: .fixed(precision: 1))")
+            // A minute's sample isn't worth a disk write; an hour's are.
+            if Date().timeIntervalSince(lastInsightsSave) >= 3600 { saveInsights() }
+        }
+    }
+
+    private func saveInsights() {
+        guard insightsChanged else { return }
+        do {
+            try insightsFile.save(liveInsights)
+            insightsChanged = false
+            lastInsightsSave = Date()
+        } catch {
+            log.error("Saving insights failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func clearHotMoments() {
+        liveInsights.clearMoments()
+        insightsChanged = true
+        displayRevision &+= 1
+        saveInsights()
     }
 
     // MARK: Actions

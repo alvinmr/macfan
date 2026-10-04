@@ -266,19 +266,29 @@ struct AppActivityRow: View {
 
 /// An app's Finder icon, or a generic one for command-line tools.
 struct AppIcon: View {
-    let app: AppActivity
+    private let bundlePath: String?
+    private let fallbackSymbol: String
     let size: CGFloat
+
+    init(app: AppActivity, size: CGFloat) {
+        self.bundlePath = app.bundlePath
+        self.fallbackSymbol = app.isSystem ? "applelogo" : (app.isSystemComponent ? "gearshape" : "terminal")
+        self.size = size
+    }
+
+    init(culprit: HotMoment.Culprit, size: CGFloat) {
+        self.bundlePath = culprit.bundlePath
+        self.fallbackSymbol = culprit.isSystemComponent ? "gearshape" : "terminal"
+        self.size = size
+    }
 
     var body: some View {
         Group {
-            if app.isSystem {
-                Image(systemName: "applelogo")
-                    .foregroundStyle(.secondary)
-            } else if let path = app.bundlePath {
-                Image(nsImage: Self.icon(forFile: path))
+            if let bundlePath {
+                Image(nsImage: Self.icon(forFile: bundlePath))
                     .resizable()
             } else {
-                Image(systemName: app.isSystemComponent ? "gearshape" : "terminal")
+                Image(systemName: fallbackSymbol)
                     .foregroundStyle(.secondary)
             }
         }

@@ -40,6 +40,10 @@ click deeper.
 - **Power draw.** How many watts your Mac is using, and on a laptop how fast the
   battery is charging or draining and how long it has left.
 - **Pinned sensors.** Right-click a sensor to keep it in the sidebar.
+- **Insights.** *Hot moments* lists each time your Mac ran hot or slowed itself down,
+  with the apps that were busy. *Cooling Health* spends two weeks learning how your Mac
+  normally cools, to later spot when it gets worse — the usual sign of dust in the vents.
+  Kept only on your Mac.
 - **Four cooling modes.**
   - *Automatic* — macOS decides (the default).
   - *Smart Curve* — fan speed follows a temperature. Pick Quiet, Balanced or Strong,
