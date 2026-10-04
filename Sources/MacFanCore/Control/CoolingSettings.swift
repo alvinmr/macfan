@@ -21,19 +21,26 @@ public enum TemperatureSource: Hashable, Codable, Sendable {
     case hottestOverall
     case sensor(id: String)
 
-    /// Resolves to a temperature. CPU/GPU fall back to the overall hottest if absent
-    /// (e.g. a Mac with no discrete GPU sensor), so a curve never runs blind.
-    public func temperature(in snapshot: HardwareSnapshot) -> Double? {
+    /// Resolves to a temperature. CPU/GPU fall back to the overall hottest when this Mac
+    /// has no such sensor at all — but not when one that used to report has gone quiet
+    /// (it's in `previouslyObserved`), because silently following a cooler part would
+    /// under-cool the one that matters.
+    public func temperature(in snapshot: HardwareSnapshot, previouslyObserved: Set<SensorCategory> = []) -> Double? {
         switch self {
         case .hottestCPU:
-            snapshot.hottest(in: [.cpu])?.celsius ?? snapshot.hottest()?.celsius
+            hottest(.cpu, in: snapshot, previouslyObserved: previouslyObserved)
         case .hottestGPU:
-            snapshot.hottest(in: [.gpu])?.celsius ?? snapshot.hottest()?.celsius
+            hottest(.gpu, in: snapshot, previouslyObserved: previouslyObserved)
         case .hottestOverall:
             snapshot.hottest()?.celsius
         case .sensor(let id):
             snapshot.reading(id: id)?.celsius
         }
+    }
+
+    private func hottest(_ category: SensorCategory, in snapshot: HardwareSnapshot, previouslyObserved: Set<SensorCategory>) -> Double? {
+        if let reading = snapshot.hottest(in: [category]) { return reading.celsius }
+        return previouslyObserved.contains(category) ? nil : snapshot.hottest()?.celsius
     }
 }
 
@@ -47,6 +54,26 @@ public struct CoolingSettings: Hashable, Codable, Sendable {
     public var fixedSpeed: Double = 0.5
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case mode, preset, customCurve, source, fixedSpeed
+    }
+
+    /// Decoding validates like the UI does, so corrupt settings fall back to defaults
+    /// instead of driving the fans.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decode(CoolingMode.self, forKey: .mode)
+        preset = try container.decode(CurvePreset.self, forKey: .preset)
+        customCurve = try container.decode(FanCurve.self, forKey: .customCurve)
+        source = try container.decode(TemperatureSource.self, forKey: .source)
+        fixedSpeed = try container.decode(Double.self, forKey: .fixedSpeed)
+        guard fixedSpeed.isFinite, (0...1).contains(fixedSpeed) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .fixedSpeed, in: container, debugDescription: "Fixed speed \(fixedSpeed) is outside 0…1"
+            )
+        }
+    }
 
     public var activeCurve: FanCurve {
         preset.curve ?? customCurve

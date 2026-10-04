@@ -17,14 +17,27 @@ public enum CoolingDecision: Hashable, Sendable {
 }
 
 /// Decides, once per tick, what the fans should do. Pure logic: no I/O, fully testable.
+///
+/// Missing data is never read as good news: without readings from safety-relevant sensors
+/// an emergency stays an emergency, and Fixed Speed and Smart Curve hand the fans back.
 public struct CoolingPlanner: Sendable {
     public private(set) var isInEmergency = false
     private var governor = SpeedGovernor()
+    /// Every category that has reported so far, to tell "this Mac has no GPU sensor" apart
+    /// from "the GPU sensor stopped reporting".
+    private var observedCategories: Set<SensorCategory> = []
 
     public init() {}
 
     public mutating func decide(settings: CoolingSettings, snapshot: HardwareSnapshot) -> CoolingDecision {
-        isInEmergency = SafetyPolicy.isEmergency(snapshot.readings, wasInEmergency: isInEmergency)
+        let safetyReadings = snapshot.readings.filter { $0.sensor.isIdentified && $0.sensor.category.isSafetyRelevant }
+        let hasSafetyData = !safetyReadings.isEmpty
+        if hasSafetyData {
+            // Only valid readings can prove an emergency is over.
+            isInEmergency = SafetyPolicy.isEmergency(safetyReadings, wasInEmergency: isInEmergency)
+        }
+        let previouslyObserved = observedCategories
+        observedCategories.formUnion(snapshot.readings.filter(\.sensor.isIdentified).map(\.sensor.category))
 
         if settings.mode == .automatic {
             governor.reset()
@@ -41,13 +54,17 @@ public struct CoolingPlanner: Sendable {
             return .system(.userChoice)
 
         case .max:
+            // Needs no data: there's nothing stronger to fall back to.
             return .manual(speed: 1, temperature: nil)
 
         case .fixed:
+            guard hasSafetyData else { return .system(.noData) }
             return .manual(speed: settings.fixedSpeed.clamped(to: 0...1), temperature: nil)
 
         case .curve:
-            guard let temperature = settings.source.temperature(in: snapshot) else {
+            guard hasSafetyData,
+                  let temperature = settings.source.temperature(in: snapshot, previouslyObserved: previouslyObserved)
+            else {
                 governor.reset()
                 return .system(.noData)
             }

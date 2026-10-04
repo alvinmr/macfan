@@ -20,6 +20,7 @@ public struct CurvePoint: Hashable, Codable, Sendable {
 public struct FanCurve: Hashable, Codable, Sendable {
     public static let temperatureRange: ClosedRange<Double> = 30...105
     public static let minimumGap: Double = 1
+    public static let pointCountRange: ClosedRange<Int> = 2...16
 
     public private(set) var points: [CurvePoint]
 
@@ -42,6 +43,43 @@ public struct FanCurve: Hashable, Codable, Sendable {
         let upper = points[upperIndex]
         let progress = (celsius - lower.temperature) / (upper.temperature - lower.temperature)
         return lower.speed + (upper.speed - lower.speed) * progress
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case points
+    }
+
+    /// Stored curves must already satisfy every invariant. A curve that doesn't is rejected,
+    /// not repaired: silently "fixing" corrupt settings could produce a curve nobody chose.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let points = try container.decode([CurvePoint].self, forKey: .points)
+        if let problem = Self.problem(with: points) {
+            throw DecodingError.dataCorruptedError(forKey: .points, in: container, debugDescription: problem)
+        }
+        self.points = points
+    }
+
+    /// Why `points` isn't a valid curve, or `nil` if it is.
+    static func problem(with points: [CurvePoint]) -> String? {
+        guard pointCountRange.contains(points.count) else {
+            return "A curve needs \(pointCountRange.lowerBound)–\(pointCountRange.upperBound) points, got \(points.count)"
+        }
+        for point in points {
+            guard point.temperature.isFinite, point.speed.isFinite,
+                  temperatureRange.contains(point.temperature), (0...1).contains(point.speed)
+            else { return "Point \(point) is out of range" }
+        }
+        // A tiny tolerance absorbs floating-point noise from arithmetic like 40.1 + 1.
+        for (previous, next) in zip(points, points.dropFirst()) {
+            guard next.temperature - previous.temperature >= minimumGap - 1e-9 else {
+                return "Points must be in order and at least \(minimumGap)° apart"
+            }
+            guard next.speed >= previous.speed else {
+                return "Speed must never fall as temperature rises"
+            }
+        }
+        return nil
     }
 
     /// Where point `index` may move on the temperature axis without passing its neighbours.
