@@ -1,0 +1,84 @@
+import Foundation
+import IOKit
+import SMCKit
+
+/// Reads sensors, fans and battery. Everything here is read-only and needs no privileges.
+///
+/// An actor rather than main-actor code because sensor discovery enumerates thousands of
+/// SMC keys (~0.5 s), which would hang the UI, and because it owns non-`Sendable`
+/// providers that must only ever be touched from one place.
+public actor HardwareMonitor {
+    /// The battery changes slowly and its IORegistry read is comparatively expensive.
+    private static let batteryRefreshInterval: TimeInterval = 30
+
+    private let sensorProvider: CompositeSensorProvider
+    private let fanControl: SMCFanControl?
+    private var sensors: [Sensor]?
+    private var battery: (date: Date, info: BatteryInfo?)?
+
+    public init() {
+        let smc = try? SMCConnection()
+        sensorProvider = CompositeSensorProvider(smc: smc)
+        fanControl = smc.map(SMCFanControl.init)
+    }
+
+    /// `false` in virtual machines and other environments without an SMC.
+    public var hasSMC: Bool { fanControl != nil }
+
+    public func snapshot(at date: Date = Date()) -> HardwareSnapshot {
+        let sensors = self.sensors ?? discover()
+        return HardwareSnapshot(
+            date: date,
+            readings: sensorProvider.read(sensors),
+            fans: readFans(),
+            battery: readBattery(at: date)
+        )
+    }
+
+    /// Forgets known sensors and searches again, e.g. after an external drive is attached.
+    @discardableResult
+    public func discover() -> [Sensor] {
+        let found = sensorProvider.discover()
+        sensors = found
+        return found
+    }
+
+    private func readFans() -> [FanStatus] {
+        guard let readings = fanControl?.readings() else { return [] }
+        return readings.map { reading in
+            FanStatus(
+                index: reading.index,
+                name: FanStatus.name(forIndex: reading.index, count: readings.count),
+                currentRPM: reading.actualRPM,
+                minimumRPM: reading.minimumRPM,
+                maximumRPM: reading.maximumRPM,
+                targetRPM: reading.targetRPM,
+                isManual: reading.isManual
+            )
+        }
+    }
+
+    private func readBattery(at date: Date) -> BatteryInfo? {
+        if let battery, date.timeIntervalSince(battery.date) < Self.batteryRefreshInterval {
+            return battery.info
+        }
+        let info = BatteryReader.read()
+        battery = (date, info)
+        return info
+    }
+}
+
+public enum BatteryReader {
+    /// `nil` on Macs without a battery.
+    public static func read() -> BatteryInfo? {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+        guard service != IO_OBJECT_NULL else { return nil }
+        defer { IOObjectRelease(service) }
+
+        var properties: Unmanaged<CFMutableDictionary>?
+        guard IORegistryEntryCreateCFProperties(service, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+              let dictionary = properties?.takeRetainedValue() as? [String: Any]
+        else { return nil }
+        return BatteryInfo(properties: dictionary)
+    }
+}
