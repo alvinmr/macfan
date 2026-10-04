@@ -19,7 +19,8 @@ version and changelog. **Merging that PR is the release.** The workflow then:
 1. tags `vX.Y.Z` and creates the GitHub release,
 2. runs the tests,
 3. builds a universal `MacFan.app` and `MacFan-vX.Y.Z-macOS.dmg` plus its `.sha256`,
-4. uploads them (and a version-less `MacFan-macOS.dmg` for the README's download link),
+4. uploads them (and a version-less `MacFan-macOS.dmg` for the README's download link, and
+   `MacFan-vX.Y.Z-dSYMs.zip` for symbolicating crash reports from the stripped binaries),
 5. publishes the Sparkle `appcast.xml`, so installed copies update themselves,
 6. bumps the Homebrew cask in `alvinmr/homebrew-tap`.
 
