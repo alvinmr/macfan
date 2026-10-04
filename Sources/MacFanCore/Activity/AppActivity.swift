@@ -19,12 +19,10 @@ public struct ProcessSample: Hashable, Sendable {
 public struct CPULoad: Hashable, Sendable {
     public let busyTicks: UInt64
     public let totalTicks: UInt64
-    public let cores: Int
 
-    public init(busyTicks: UInt64, totalTicks: UInt64, cores: Int) {
+    public init(busyTicks: UInt64, totalTicks: UInt64) {
         self.busyTicks = busyTicks
         self.totalTicks = totalTicks
-        self.cores = cores
     }
 }
 
@@ -39,24 +37,35 @@ public struct AppActivity: Identifiable, Hashable, Sendable {
     public let bundlePath: String?
     /// Share of one core, like Activity Monitor: 200 means two cores flat out.
     public let cpuPercent: Double
+    /// Share of the whole Mac's processing power, 0…100.
+    public let shareOfMac: Double
 
-    public init(id: String, name: String, bundlePath: String?, cpuPercent: Double) {
+    public init(id: String, name: String, bundlePath: String?, cpuPercent: Double, cores: Int) {
         self.id = id
         self.name = name
         self.bundlePath = bundlePath
         self.cpuPercent = cpuPercent
+        self.shareOfMac = cpuPercent / Double(max(cores, 1))
     }
 
     /// Everything macOS won't itemize for us: the kernel, WindowServer, other users' processes.
     public var isSystem: Bool { id == Self.systemID }
+
+    /// Part of macOS rather than something the user installed.
+    public var isSystemComponent: Bool {
+        isSystem || id.hasPrefix("/System/") || id.hasPrefix("/usr/") || id.hasPrefix(ActivityTracker.knownPrefix)
+    }
 }
 
 /// Turns successive process samples into per-app CPU usage. Helper processes count
 /// toward the app that contains them, so "Google Chrome" shows up once, not as forty helpers.
 public struct ActivityTracker: Sendable {
+    private let cores: Int
     private var previous: (date: Date, cpu: [Int32: UInt64], load: CPULoad?)?
 
-    public init() {}
+    public init(cores: Int = ProcessInfo.processInfo.activeProcessorCount) {
+        self.cores = cores
+    }
 
     /// Busiest first. `nil` on the first call, which only sets the baseline.
     ///
@@ -77,28 +86,61 @@ public struct ActivityTracker: Sendable {
             usage[owner.id, default: (owner.name, owner.bundlePath, 0)].nanoseconds += Double(sample.cpuNanoseconds - before)
         }
         var apps = usage.map {
-            AppActivity(id: $0.key, name: $0.value.name, bundlePath: $0.value.bundlePath, cpuPercent: $0.value.nanoseconds / elapsed * 100)
+            AppActivity(id: $0.key, name: $0.value.name, bundlePath: $0.value.bundlePath,
+                        cpuPercent: $0.value.nanoseconds / elapsed * 100, cores: cores)
         }
         if let load, let before = previous.load, load.totalTicks > before.totalTicks, load.busyTicks >= before.busyTicks {
-            let total = Double(load.busyTicks - before.busyTicks) / Double(load.totalTicks - before.totalTicks) * Double(load.cores) * 100
+            let total = Double(load.busyTicks - before.busyTicks) / Double(load.totalTicks - before.totalTicks) * Double(cores) * 100
             // Ticks and process times are read a moment apart, so small differences are noise.
             let rest = total - apps.map(\.cpuPercent).reduce(0, +)
             if rest >= 1 {
-                apps.append(AppActivity(id: AppActivity.systemID, name: "macOS", bundlePath: nil, cpuPercent: rest))
+                apps.append(AppActivity(id: AppActivity.systemID, name: "macOS", bundlePath: nil, cpuPercent: rest, cores: cores))
             }
         }
         return apps.sorted { $0.cpuPercent > $1.cpuPercent }
     }
 
-    /// The outermost `.app` bundle containing the executable, so helpers inside
-    /// `Foo.app/Contents/Frameworks/…` belong to Foo.
+    static let knownPrefix = "known:"
+
+    /// Background processes that belong to a feature people recognise, by executable name.
+    static let knownProcesses: [String: (name: String, bundlePath: String?)] = {
+        let shortcuts = ("Shortcuts", "/System/Applications/Shortcuts.app")
+        let spotlight = ("Spotlight", "/System/Library/CoreServices/Spotlight.app")
+        let photos = ("Photos", "/System/Applications/Photos.app")
+        let storage = ("Storage Cleanup", "/System/Applications/System Settings.app")
+        let icloud = ("iCloud Sync", "/System/Applications/System Settings.app")
+        return [
+            "BackgroundShortcutRunner": shortcuts, "siriactionsd": shortcuts, "WorkflowKitBackgroundRunner": shortcuts,
+            "mds": spotlight, "mds_stores": spotlight, "mdworker": spotlight, "mdworker_shared": spotlight,
+            "corespotlightd": spotlight, "Spotlight": spotlight,
+            "photoanalysisd": photos, "photolibraryd": photos, "mediaanalysisd": photos,
+            "deleted": storage, "deleted_helper": storage,
+            "bird": icloud, "cloudd": icloud, "fileproviderd": icloud,
+        ]
+    }()
+
+    /// Who to credit for an executable's CPU time:
+    /// - the outermost `.app` or `.appex` bundle containing it, so helpers inside
+    ///   `Foo.app/Contents/Frameworks/…` belong to Foo;
+    /// - a known feature for macOS background processes ("Shortcuts", not "siriactionsd");
+    /// - otherwise the executable, named after its folder when the file is just a version number.
     public static func owner(ofExecutable path: String) -> (id: String, name: String, bundlePath: String?) {
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
-        if let index = components.firstIndex(where: { $0.hasSuffix(".app") }) {
+        if let index = components.firstIndex(where: { $0.hasSuffix(".app") || $0.hasSuffix(".appex") }) {
             let bundle = components[...index].joined(separator: "/")
-            return (bundle, String(components[index].dropLast(4)), bundle)
+            let name = components[index].split(separator: ".").dropLast().joined(separator: ".")
+            return (bundle, name, bundle)
         }
-        return (path, String(components.last ?? Substring(path)), nil)
+        let executable = String(components.last ?? Substring(path))
+        if let known = knownProcesses[executable] {
+            return (knownPrefix + known.name, known.name, known.bundlePath)
+        }
+        let isVersion = { (name: Substring) in !name.isEmpty && name.allSatisfy { $0.isNumber || $0 == "." } }
+        if isVersion(Substring(executable)),
+           let folder = components.dropLast().last(where: { !isVersion($0) && $0 != "versions" && !$0.isEmpty }) {
+            return (path, String(folder), nil)
+        }
+        return (path, executable, nil)
     }
 }
 
@@ -146,8 +188,7 @@ final class ProcessReader {
         guard result == KERN_SUCCESS else { return nil }
         let ticks = info.cpu_ticks
         let user = UInt64(ticks.0), system = UInt64(ticks.1), idle = UInt64(ticks.2), nice = UInt64(ticks.3)
-        return CPULoad(busyTicks: user + system + nice, totalTicks: user + system + idle + nice,
-                       cores: ProcessInfo.processInfo.activeProcessorCount)
+        return CPULoad(busyTicks: user + system + nice, totalTicks: user + system + idle + nice)
     }
 
     private func cpuTicks(of pid: Int32) -> UInt64? {

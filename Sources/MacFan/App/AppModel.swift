@@ -31,6 +31,8 @@ final class AppModel {
     private(set) var hasStarted = false
     /// Busiest apps, busiest first. Only kept current while a view showing them is on screen.
     private(set) var topApps: [AppActivity] = []
+    /// How busy the whole Mac is, 0…100. Kept current alongside `topApps`.
+    private(set) var cpuBusy: Double?
     /// What the menu bar shows. Assigned only when it changes, so the status item isn't
     /// redrawn on every refresh.
     private(set) var menuBarContent = MenuBarContent(symbol: "thermometer.medium", text: nil)
@@ -116,9 +118,10 @@ final class AppModel {
         snapshot.fans.map(\.currentRPM).max()
     }
 
-    /// The app most worth mentioning when the Mac is warm: busy enough to matter.
+    /// The app most worth mentioning when the Mac is warm: busy enough to matter (half a
+    /// core or more), and something the user could quit, so never macOS itself.
     var busiestApp: AppActivity? {
-        topApps.first.flatMap { $0.cpuPercent >= 50 ? $0 : nil }
+        topApps.first { !$0.isSystemComponent && $0.cpuPercent >= 50 }
     }
 
     func updateMenuBarContent() {
@@ -164,7 +167,10 @@ final class AppModel {
             try? await Task.sleep(for: .seconds(3600))
         }
         activityWatchers -= 1
-        if activityWatchers == 0 { topApps = [] }
+        if activityWatchers == 0 {
+            topApps = []
+            cpuBusy = nil
+        }
     }
 
     private func sampleActivity() async {
@@ -174,6 +180,7 @@ final class AppModel {
         lastActivitySample = now
         if let apps = await activity.sample(at: now), activityWatchers > 0 {
             topApps = Array(apps.prefix(5))
+            cpuBusy = min(apps.map(\.shareOfMac).reduce(0, +), 100)
         }
         log.debug("Sampled app activity for \(self.activityWatchers) visible view(s)")
     }

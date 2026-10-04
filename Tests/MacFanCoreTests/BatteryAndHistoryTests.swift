@@ -161,8 +161,23 @@ struct ActivityTests {
         #expect(tool.bundlePath == nil)
     }
 
+    @Test func `macOS background processes are named for their feature`() {
+        let runner = ActivityTracker.owner(ofExecutable: "/System/Library/PrivateFrameworks/WorkflowKit.framework/Versions/A/XPCServices/BackgroundShortcutRunner.xpc/Contents/MacOS/BackgroundShortcutRunner")
+        let siri = ActivityTracker.owner(ofExecutable: "/System/Library/PrivateFrameworks/VoiceShortcuts.framework/Versions/A/Support/siriactionsd")
+        #expect(runner.name == "Shortcuts")
+        #expect(runner.id == siri.id, "Both count toward one Shortcuts row")
+        #expect(ActivityTracker.owner(ofExecutable: "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted").name == "Storage Cleanup")
+    }
+
+    @Test func `extensions and versioned executables get readable names`() {
+        let storage = ActivityTracker.owner(ofExecutable: "/System/Library/ExtensionKit/Extensions/Storage.appex/Contents/MacOS/Storage")
+        #expect(storage.name == "Storage")
+        #expect(storage.bundlePath == "/System/Library/ExtensionKit/Extensions/Storage.appex")
+        #expect(ActivityTracker.owner(ofExecutable: "/Users/me/.local/share/claude/versions/2.1.289").name == "claude")
+    }
+
     @Test func `cpu percent is time used over time elapsed`() throws {
-        var tracker = ActivityTracker()
+        var tracker = ActivityTracker(cores: 2)
         let start = Date(timeIntervalSinceReferenceDate: 0)
         let app = "/Applications/Foo.app/Contents/MacOS/Foo"
         let helper = "/Applications/Foo.app/Contents/Frameworks/Foo Helper.app/Contents/MacOS/Foo Helper"
@@ -184,17 +199,18 @@ struct ActivityTests {
 
         #expect(apps.map(\.name) == ["Foo", "bar"])
         #expect(apps.map(\.cpuPercent) == [100, 25])
+        #expect(apps.map(\.shareOfMac) == [50, 12.5], "Two cores: one busy core is half the Mac")
     }
 
     @Test func `what macOS won't itemize is counted as the system`() throws {
-        var tracker = ActivityTracker()
+        var tracker = ActivityTracker(cores: 4)
         let start = Date(timeIntervalSinceReferenceDate: 0)
         let app = "/Applications/Foo.app/Contents/MacOS/Foo"
         _ = tracker.update([ProcessSample(pid: 1, path: app, cpuNanoseconds: 0)],
-                           load: CPULoad(busyTicks: 0, totalTicks: 0, cores: 4), at: start)
+                           load: CPULoad(busyTicks: 0, totalTicks: 0), at: start)
         // Over one second the Mac was 50% busy across 4 cores (200% of one core); Foo used 50%.
         let update = tracker.update([ProcessSample(pid: 1, path: app, cpuNanoseconds: 500_000_000)],
-                                    load: CPULoad(busyTicks: 200, totalTicks: 400, cores: 4), at: start.addingTimeInterval(1))
+                                    load: CPULoad(busyTicks: 200, totalTicks: 400), at: start.addingTimeInterval(1))
         let apps = try #require(update)
 
         #expect(apps.map(\.isSystem) == [true, false])
@@ -202,13 +218,13 @@ struct ActivityTests {
     }
 
     @Test func `no system entry when the apps account for everything`() throws {
-        var tracker = ActivityTracker()
+        var tracker = ActivityTracker(cores: 1)
         let start = Date(timeIntervalSinceReferenceDate: 0)
         let app = "/Applications/Foo.app/Contents/MacOS/Foo"
         _ = tracker.update([ProcessSample(pid: 1, path: app, cpuNanoseconds: 0)],
-                           load: CPULoad(busyTicks: 0, totalTicks: 0, cores: 1), at: start)
+                           load: CPULoad(busyTicks: 0, totalTicks: 0), at: start)
         let update = tracker.update([ProcessSample(pid: 1, path: app, cpuNanoseconds: 1_000_000_000)],
-                                    load: CPULoad(busyTicks: 100, totalTicks: 100, cores: 1), at: start.addingTimeInterval(1))
+                                    load: CPULoad(busyTicks: 100, totalTicks: 100), at: start.addingTimeInterval(1))
         let apps = try #require(update)
         #expect(apps.allSatisfy { !$0.isSystem })
     }
