@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/alvinmr/macfan/compare/v0.3.0...v0.3.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* keep learning Cooling Health while Smart Curve drives the fans ([ef43507](https://github.com/alvinmr/macfan/commit/ef4350728b7e8c2ea12df5f16303054c687a5f24))
+* keep learning Cooling Health while Smart Curve drives the fans ([9a47514](https://github.com/alvinmr/macfan/commit/9a475146555c17139359212e10fc96f42c9061c4))
+
 ## [0.3.0](https://github.com/alvinmr/macfan/compare/v0.2.0...v0.3.0) (2026-10-04)
 
 
