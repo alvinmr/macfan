@@ -43,6 +43,7 @@ click deeper.
 - **Insights.** *Hot moments* lists each time your Mac ran hot or slowed itself down,
   with the apps that were busy. *Cooling Health* spends two weeks learning how your Mac
   normally cools, to later spot when it gets worse — the usual sign of dust in the vents.
+  Automatic and each Smart Curve are learned separately; Fixed Speed and Max pause it.
   Kept only on your Mac.
 - **Four cooling modes.**
   - *Automatic* — macOS decides (the default).
