@@ -23,11 +23,15 @@ struct InsightsView: View {
 // MARK: - Cooling health
 
 /// Learns how this Mac normally cools, so it can later say when that gets worse.
+/// Automatic and each Smart Curve are learned separately; Fixed Speed and Max pause learning.
 private struct CoolingHealthCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(Preferences.self) private var preferences
 
     var body: some View {
-        let days = model.insights.cooling.daysCollected()
+        let controller = preferences.cooling.learningController
+        let log = model.insights.cooling
+        let days = controller.map { log.daysCollected(under: $0) } ?? 0
         let needed = CoolingLog.learningDays
 
         Card {
@@ -36,7 +40,7 @@ private struct CoolingHealthCard: View {
                     Label("Cooling Health", systemImage: "wind")
                         .font(.headline)
                     Spacer()
-                    Text(days >= needed ? "Ready" : "Learning")
+                    Text(controller == nil ? "Paused" : days >= needed ? "Ready" : "Learning")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, Theme.Spacing.s)
@@ -44,19 +48,33 @@ private struct CoolingHealthCard: View {
                         .background(.quaternary, in: .capsule)
                 }
 
-                if days >= needed {
-                    Text("MacFan knows how your Mac normally cools. The comparison arrives in an upcoming update.")
-                        .font(.title3.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("Learning how your Mac normally cools")
-                        .font(.title3.weight(.semibold))
-                    ProgressView(value: Double(days), total: Double(needed)) {
-                        EmptyView()
-                    } currentValueLabel: {
-                        Text("\(days) of \(needed) days")
-                            .monospacedDigit()
+                if let controller {
+                    if days >= needed {
+                        Text("MacFan knows how your Mac normally cools. The comparison arrives in an upcoming update.")
+                            .font(.title3.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(controller == .macOS ? "Learning how your Mac normally cools" : "Learning how your Mac cools with your Smart Curve")
+                            .font(.title3.weight(.semibold))
+                        ProgressView(value: Double(days), total: Double(needed)) {
+                            EmptyView()
+                        } currentValueLabel: {
+                            Text("\(days) of \(needed) days")
+                                .monospacedDigit()
+                        }
+                        if case .curve = controller, days == 0, log.hasLearnedOtherCurve(than: controller) {
+                            Label("Your Smart Curve changed, so learning started over for the new one. Switch back to the old curve and its progress returns.",
+                                  systemImage: "arrow.counterclockwise")
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
+                } else {
+                    Text("Paused while the fans run at a fixed speed")
+                        .font(.title3.weight(.semibold))
+                    Text("Fixed Speed and Max don't react to temperature, so they can't show how well your Mac cools. Learning carries on in Automatic or Smart Curve.")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Text("MacFan quietly notes how warm your Mac gets for the work it's doing. Once it knows what's normal, it can tell you when cooling gets worse than it used to be — usually a sign of dust in the vents or a tired fan.")

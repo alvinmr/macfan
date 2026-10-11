@@ -108,11 +108,14 @@ private func coolingSnapshot(cpu: Double, air: Double, rpm: Double?, manual: Boo
 @Suite("Cooling health")
 struct CoolingHealthTests {
     private func run(_ sampler: inout CoolingSampler, from: TimeInterval, to: TimeInterval,
-                     load: (TimeInterval) -> Double = { _ in 10 }, manual: Bool = false, byMacOS: Bool = true) -> [CoolingSample] {
+                     load: (TimeInterval) -> Double = { _ in 10 }, manual: Bool = false,
+                     controller: CoolingController? = .macOS) -> [CoolingSample] {
         stride(from: from, through: to, by: 2).compactMap {
-            sampler.add(coolingSnapshot(cpu: 70, air: 35, rpm: 2000, manual: manual, at: $0), load: load($0), fansByMacOS: byMacOS)
+            sampler.add(coolingSnapshot(cpu: 70, air: 35, rpm: 2000, manual: manual, at: $0), load: load($0), controller: controller)
         }
     }
+
+    private let curve = CoolingController.curve(CurvePreset.balanced.curve!, source: .hottestCPU)
 
     @Test func `waits for temperatures to settle after starting`() {
         var sampler = CoolingSampler()
@@ -137,11 +140,58 @@ struct CoolingHealthTests {
         #expect(samples.count == 2)
     }
 
-    @Test func `skips minutes when macOS isn't choosing fan speeds`() {
+    @Test func `skips minutes when nobody comparable is choosing fan speeds`() {
         var sampler = CoolingSampler()
         _ = run(&sampler, from: 0, to: 298)
         #expect(run(&sampler, from: 300, to: 420, manual: true).isEmpty, "Another app set the fans to manual")
-        #expect(run(&sampler, from: 422, to: 540, byMacOS: false).isEmpty, "MacFan is running a curve")
+        #expect(run(&sampler, from: 422, to: 900, controller: nil).isEmpty, "MacFan is running a fixed speed")
+    }
+
+    @Test func `learns under a Smart Curve, whose fans are manual`() {
+        var sampler = CoolingSampler()
+        _ = run(&sampler, from: 0, to: 298, manual: true, controller: curve)
+        let samples = run(&sampler, from: 300, to: 480, manual: true, controller: curve)
+        #expect(samples.count == 2)
+        #expect(samples.allSatisfy { $0.controller == curve })
+    }
+
+    @Test func `settles again after the controller changes`() {
+        var sampler = CoolingSampler()
+        _ = run(&sampler, from: 0, to: 420)
+        #expect(run(&sampler, from: 422, to: 720, manual: true, controller: curve).isEmpty)
+        #expect(run(&sampler, from: 722, to: 960, manual: true, controller: curve).count == 2)
+    }
+
+    @Test func `modes map to what Cooling Health learns under`() {
+        var settings = CoolingSettings()
+        #expect(settings.learningController == .macOS)
+        settings.mode = .curve
+        #expect(settings.learningController == curve)
+        settings.mode = .fixed
+        #expect(settings.learningController == nil)
+        settings.mode = .max
+        #expect(settings.learningController == nil)
+    }
+
+    @Test func `log keeps each controller apart`() {
+        var log = CoolingLog()
+        let other = CoolingController.curve(CurvePreset.quiet.curve!, source: .hottestCPU)
+        for minute in 0..<10 {
+            log.add(CoolingSample(date: start.addingTimeInterval(Double(minute) * 60), load: 10, rise: 30, fanRPM: 2000), kind: .watts)
+            log.add(CoolingSample(date: start.addingTimeInterval(Double(minute) * 60), load: 10, rise: 25, fanRPM: 3000, controller: curve), kind: .watts)
+        }
+        #expect(log.entries.count == 2)
+        #expect(log.daysCollected(under: .macOS) == 1)
+        #expect(log.daysCollected(under: curve) == 1)
+        #expect(log.daysCollected(under: other) == 0)
+        #expect(log.hasLearnedOtherCurve(than: other))
+        #expect(!log.hasLearnedOtherCurve(than: curve), "macOS's minutes aren't another curve")
+    }
+
+    @Test func `entries saved before controllers were tracked belong to macOS`() throws {
+        let json = #"{"day":0,"band":2,"minutes":12,"riseTotal":360,"rpmTotal":24000,"rpmMinutes":12}"#
+        let entry = try JSONDecoder().decode(CoolingLog.Entry.self, from: Data(json.utf8))
+        #expect(entry.controller == CoolingController.macOS.key)
     }
 
     @Test func `settles again after the Mac sleeps`() {
@@ -161,8 +211,8 @@ struct CoolingHealthTests {
         #expect(band?.minutes == 2)
         #expect(band?.averageRise == 32)
         #expect(band?.averageRPM == 2000, "Minutes without fan data don't dilute the fan average")
-        #expect(log.daysCollected(minimumMinutes: 3) == 1)
-        #expect(log.daysCollected(minimumMinutes: 4) == 0)
+        #expect(log.daysCollected(under: .macOS, minimumMinutes: 3) == 1)
+        #expect(log.daysCollected(under: .macOS, minimumMinutes: 4) == 0)
     }
 
     @Test func `log keeps four months`() {

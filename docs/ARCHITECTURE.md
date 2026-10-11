@@ -58,7 +58,7 @@ Private symbols are bound with `__asm` labels so they never collide with IOKit's
   samples while a view showing the result is on screen, or during a hot moment.
 - **Insights** — `HotMomentRecorder` (pure: snapshots → hot moments with culprits),
   `CoolingSampler` and `CoolingLog` (pure: steady one-minute samples → daily averages per
-  workload band), `InsightsFile` (one JSON file in Application Support).
+  workload band and `CoolingController`, macOS or one exact Smart Curve), `InsightsFile` (one JSON file in Application Support).
 - **Logging** — `CSVLogger` (actor).
 
 ### `MacFanXPC`
