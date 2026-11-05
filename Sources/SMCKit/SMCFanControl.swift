@@ -26,9 +26,8 @@ public struct SMCFanReading: Hashable, Sendable {
 /// Reads fan state and, when running as root, takes or returns manual control.
 ///
 /// Two firmware families exist:
-/// - **Apple Silicon** (and recent Intel): per-fan mode key `F<n>Md`. On Apple Silicon the
-///   `Ftst` key must be set first, otherwise the firmware's thermal manager immediately
-///   reclaims the fan.
+/// - **Apple Silicon** (and recent Intel): per-fan mode key `F<n>Md` or `F<n>md`.
+///   Some firmware also needs `Ftst` to release the fan from the thermal manager.
 /// - **Older Intel**: one bitmask key `FS! ` where bit `n` puts fan `n` in forced mode.
 ///
 /// Fails closed: when the data needed to control a fan safely is missing, it throws rather
@@ -75,7 +74,7 @@ public struct SMCFanControl<SMC: SMCKeyAccess> {
     }
 
     public func isManual(fan index: Int) -> Bool {
-        if let mode = smc.double(key("F%dMd", index)) {
+        if let modeKey = modeKey(fan: index), let mode = smc.double(modeKey) {
             return mode == 1
         }
         if let mask = forcedMask() {
@@ -105,13 +104,12 @@ public struct SMCFanControl<SMC: SMCKeyAccess> {
     }
 
     public func setManual(_ manual: Bool, fan index: Int) throws {
-        let modeKey = key("F%dMd", index)
-        if smc.contains(modeKey) {
+        if let modeKey = modeKey(fan: index) {
             try setModeKey(modeKey, manual: manual)
         } else if smc.contains("FS! ") {
             try setForcedBit(manual, fan: index)
         } else {
-            throw SMCError.keyNotFound(modeKey.name)
+            throw SMCError.keyNotFound(key("F%dMd", index).name)
         }
     }
 
@@ -125,6 +123,15 @@ public struct SMCFanControl<SMC: SMCKeyAccess> {
     }
 
     // MARK: Private
+
+    /// Probe each fan; key casing varies by firmware. Keep reads and writes consistent.
+    private func modeKey(fan index: Int) -> SMCKey? {
+        for format in ["F%dMd", "F%dmd"] {
+            let candidate = key(format, index)
+            if smc.contains(candidate) { return candidate }
+        }
+        return nil
+    }
 
     private func setModeKey(_ modeKey: SMCKey, manual: Bool) throws {
         let hasTestMode = smc.contains("Ftst")
