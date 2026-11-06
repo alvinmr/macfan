@@ -190,7 +190,7 @@ struct ChipFamilyTests {
         let cores: Set = ["Tp01", "Tp05", "Tp09", "Tp0D", "Tp0Y", "Tp0b", "Tp0e", "Te05", "Te0S"]
         let keys = Self.m4ProKeys
         let readings = zip(keys, SensorCatalog.classify(smcKeys: keys, chipFamily: "M4")).map { key, classification in
-            Fixtures.reading(cores.contains(key) ? 62 : (classification.category == .cpuDie ? 83 : 40),
+            Fixtures.reading(cores.contains(key) ? 62 : (["Tp", "Te", "Tf"].contains { key.hasPrefix($0) } ? 83 : 40),
                              category: classification.category, id: key)
         }
         let snapshot = Fixtures.snapshot(readings)
