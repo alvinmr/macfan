@@ -134,11 +134,70 @@ struct ChipFamilyTests {
         #expect(SensorCatalog.chipFamily(brand: brand) == family)
     }
 
-    @Test func `no family classifies every key as before`() {
-        let legacy = Self.m4ProKeys.map { SensorCatalog.classify(smcKey: $0) }
-        #expect(SensorCatalog.classify(smcKeys: Self.m4ProKeys, chipFamily: nil) == legacy)
-        #expect(Self.m4ProKeys.map { SensorCatalog.classify(smcKey: $0, chipFamily: nil) } == legacy)
-        #expect(legacy.filter { $0.category == .cpuDie }.isEmpty)
+    /// Classifications before this change (base 50f5030), written out by hand from its `smcRules`:
+    /// every Tp??/Tf?? is "CPU #", every Te?? is "CPU Efficiency #", all identified `.cpu`.
+    static func legacy(_ key: String) -> SensorCatalog.Classification {
+        func c(_ category: SensorCategory, _ name: String, _ identified: Bool = true) -> SensorCatalog.Classification {
+            .init(category: category, nameTemplate: name, isIdentified: identified)
+        }
+        switch key {
+        case _ where key.hasPrefix("Tp") || key.hasPrefix("Tf"): return c(.cpu, "CPU #")
+        case _ where key.hasPrefix("Te"): return c(.cpu, "CPU Efficiency #")
+        case "Tg0K", "Tg1U": return c(.gpu, "GPU #")
+        case "TH0a": return c(.storage, "SSD #")
+        case "TB0T": return c(.battery, "Battery")
+        case "TW0P": return c(.wireless, "Wi-Fi Module")
+        case "TaLP": return c(.enclosure, "Airflow Left #")
+        case "Ts0P": return c(.enclosure, "Palm Rest #")
+        case "TVMR": return c(.power, "Voltage Regulator #")
+        case "TMVR": return c(.memory, "Memory #")
+        case "TCMz": return c(.other, "Sensor TCMz", false)
+        default: preconditionFailure("no hand-written legacy expectation for \(key)")
+        }
+    }
+
+    @Test(arguments: [
+        ("Tp01", SensorCategory.cpu, "CPU #", true),
+        ("Tf10", .cpu, "CPU #", true),
+        ("Te05", .cpu, "CPU Efficiency #", true),
+        ("Tex0", .cpu, "CPU Efficiency #", true),
+        ("TC0P", .cpu, "CPU Proximity", true),
+        ("TC3C", .cpu, "CPU Core #", true),
+        ("TCGC", .gpu, "Integrated GPU", true),
+        ("Tg0K", .gpu, "GPU #", true),
+        ("TH0a", .storage, "SSD #", true),
+        ("TCMz", .other, "Sensor TCMz", false),
+        ("TZZZ", .other, "Sensor TZZZ", false),
+    ] as [(String, SensorCategory, String, Bool)])
+    func `key without a family classifies as before this change`(key: String, category: SensorCategory, name: String, identified: Bool) {
+        let expected = SensorCatalog.Classification(category: category, nameTemplate: name, isIdentified: identified)
+        #expect(SensorCatalog.classify(smcKey: key) == expected)
+        #expect(SensorCatalog.classify(smcKey: key, chipFamily: nil) == expected)
+        #expect(SensorCatalog.classify(smcKeys: [key], chipFamily: nil) == [expected])
+    }
+
+    @Test func `no family classifies every M4 Pro key as before`() {
+        let expected = Self.m4ProKeys.map(Self.legacy)
+        #expect(Self.m4ProKeys.map { SensorCatalog.classify(smcKey: $0) } == expected)
+        #expect(Self.m4ProKeys.map { SensorCatalog.classify(smcKey: $0, chipFamily: nil) } == expected)
+        #expect(SensorCatalog.classify(smcKeys: Self.m4ProKeys, chipFamily: nil) == expected)
+        #expect(SensorCatalog.classify(smcKeys: Self.m4ProKeys, chipFamily: "M9") == expected)
+    }
+
+    /// Regression for the reported bug: the default CPU reading was the hottest of every Tp/Te/Tf key,
+    /// so die hotspots (83 °C) drove it instead of the cores (62 °C Stats shows).
+    @Test func `M4 Pro default CPU reading follows the cores, not the die hotspots`() {
+        let cores: Set = ["Tp01", "Tp05", "Tp09", "Tp0D", "Tp0Y", "Tp0b", "Tp0e", "Te05", "Te0S"]
+        let keys = Self.m4ProKeys
+        let readings = zip(keys, SensorCatalog.classify(smcKeys: keys, chipFamily: "M4")).map { key, classification in
+            Fixtures.reading(cores.contains(key) ? 62 : (classification.category == .cpuDie ? 83 : 40),
+                             category: classification.category, id: key)
+        }
+        let snapshot = Fixtures.snapshot(readings)
+        #expect(snapshot.hottest(in: [.cpu])?.celsius == 62)
+        #expect(snapshot.hottest(in: [.cpu, .gpu])?.celsius == 62)
+        #expect(snapshot.summaries().first { $0.category == .cpu }?.hottest.celsius == 62)
+        #expect(snapshot.hottest()?.celsius == 83, "hotspots stay visible overall")
     }
 
     @Test func `M4 Pro keeps exactly the Stats core keys as CPU`() {
