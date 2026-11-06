@@ -126,13 +126,15 @@ Thresholds differ by part. Reason: an Apple Silicon CPU at 90 °C under load is 
 | `worstLevel` | The worst level of identified, safety-relevant readings. |
 | `summaries()` | One hottest, average and count for each category. |
 
+Reason for `hottest(in:)` choosing the highest Celsius reading in the supplied categories, or across all categories when none are supplied: not stated in the code.
+
 Reason for `worstLevel`: only parts whose overheating is a reason to step in decide the level. Reason for the identified filter and for `summaries()`: not stated in the code.
 
 ### Curve source
 
 `TemperatureSource.temperature` resolves the temperature that a curve follows.
 
-- `.hottestCPU` and `.hottestGPU` return the hottest reading of that category.
+- `.hottestCPU` and `.hottestGPU` return the hottest reading of that category. Reason: not stated in the code.
 - When the category never reported, they return the overall hottest reading. Reason: this Mac has no such sensor, so the curve needs another source.
 - When the category reported before and went quiet, they return nothing. Reason: following a cooler part would under-cool the part that matters.
 - `.hottestOverall` returns the hottest identified reading. Reason: not stated in the code.
