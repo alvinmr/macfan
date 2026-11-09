@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/alvinmr/macfan/compare/v0.3.1...v0.3.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* support lowercase SMC fan mode keys on M5 Macs ([#11](https://github.com/alvinmr/macfan/issues/11)) ([fd9a108](https://github.com/alvinmr/macfan/commit/fd9a10804fc62c6720b284591a12ed32cb915296))
+
 ## [0.3.1](https://github.com/alvinmr/macfan/compare/v0.3.0...v0.3.1) (2026-10-11)
 
 
