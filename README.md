@@ -23,7 +23,6 @@
   <code>brew install --cask alvinmr/tap/macfan</code>
 </p>
 
-<!-- TODO: replace with a short GIF (docs/images/demo.gif) of dragging the fan curve. -->
 <p align="center">
   <img src="docs/images/overview.png" width="760" alt="MacFan overview: status, fans, temperatures and the apps making the Mac warm">
 </p>
@@ -51,7 +50,11 @@
 ## Features
 
 <p align="center">
-  <img src="docs/images/fans.png" width="49%" alt="Fan control with a draggable temperature curve">
+  <img src="docs/images/demo.gif" width="760" alt="Switching between Quiet, Balanced and Strong fan curves, then dragging points to draw a custom curve">
+</p>
+
+<p align="center">
+  <img src="docs/images/sensors.png" width="49%" alt="Every sensor, grouped by part">
   <img src="docs/images/battery.png" width="49%" alt="Battery health">
 </p>
 
