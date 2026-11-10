@@ -199,6 +199,12 @@ private struct HelperSetupCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    if model.helper.status == .needsRestart {
+                        Text("MacFan was updated, and macOS only starts the new helper after a restart. Until then, macOS keeps controlling the fans.")
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if case .unavailable(let message) = model.helper.status {
                         Text(message).font(.callout).foregroundStyle(.orange)
                     }
@@ -212,6 +218,11 @@ private struct HelperSetupCard: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(isWorking)
+
+                        if model.helper.status == .needsRestart {
+                            Button("Try Again", action: install)
+                                .disabled(isWorking)
+                        }
 
                         if isWorking {
                             ProgressView().controlSize(.small)
@@ -227,6 +238,7 @@ private struct HelperSetupCard: View {
         switch model.helper.status {
         case .requiresApproval: "Allow MacFan in System Settings"
         case .outdated: "Update the fan control helper"
+        case .needsRestart: "Restart to finish updating the helper"
         default: "One-time setup to control fans"
         }
     }
@@ -235,6 +247,7 @@ private struct HelperSetupCard: View {
         switch model.helper.status {
         case .requiresApproval: "Open Login Items…"
         case .outdated: "Update Helper"
+        case .needsRestart: "Restart…"
         case .unavailable: "Try Again"
         default: "Install Helper"
         }
@@ -245,6 +258,14 @@ private struct HelperSetupCard: View {
             model.helper.openLoginItemsSettings()
             return
         }
+        if model.helper.status == .needsRestart {
+            model.helper.requestRestart()
+            return
+        }
+        install()
+    }
+
+    private func install() {
         isWorking = true
         Task {
             await model.helper.install()

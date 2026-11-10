@@ -19,6 +19,10 @@ final class HelperManager {
         case ready
         /// Installed, but speaks an older protocol than this app.
         case outdated
+        /// Registered, but macOS won't start the helper that came with an update until the
+        /// Mac restarts. Ad-hoc signed helpers are trusted by their exact code hash, and the
+        /// launch constraint recorded for the previous build isn't refreshed before then.
+        case needsRestart
         case unavailable(String)
     }
 
@@ -28,6 +32,22 @@ final class HelperManager {
     var isReady: Bool { status == .ready }
 
     @ObservationIgnored private var connection: NSXPCConnection?
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    /// The app build the helper last answered for. When it differs from the running build,
+    /// a silent helper is almost always the one an update replaced.
+    private var lastWorkingBuild: String? {
+        get { defaults.string(forKey: "helperLastWorkingBuild") }
+        set { defaults.set(newValue, forKey: "helperLastWorkingBuild") }
+    }
+
+    private static var currentBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+    }
     private var service: SMAppService { .daemon(plistName: HelperConstants.daemonPlistName) }
 
     // MARK: Lifecycle
@@ -37,11 +57,18 @@ final class HelperManager {
         // helpers installed manually with `scripts/install-helper-dev.sh`.
         if let version = try? await protocolVersion() {
             status = version == HelperConstants.protocolVersion ? .ready : .outdated
+            if status == .ready { lastWorkingBuild = Self.currentBuild }
             return
         }
         switch service.status {
         case .enabled:
-            status = .unavailable(String(localized: "The helper is registered but isn't responding. Restart your Mac, or see Troubleshooting in the README."))
+            // Unknown history counts as an update: helpers installed before this check
+            // existed hit the same restart requirement on their first update.
+            if lastWorkingBuild != Self.currentBuild {
+                status = .needsRestart
+            } else {
+                status = .unavailable(String(localized: "The helper is registered but isn't responding. Restart your Mac, or see the FAQ in MacFan's README."))
+            }
         case .requiresApproval:
             status = .requiresApproval
         case .notRegistered, .notFound:
@@ -80,6 +107,12 @@ final class HelperManager {
 
     func openLoginItemsSettings() {
         SMAppService.openSystemSettingsLoginItems()
+    }
+
+    /// Shows macOS's own "Are you sure you want to restart?" dialog, so nothing restarts
+    /// without the user confirming and every app gets the chance to save.
+    func requestRestart() {
+        NSAppleScript(source: "tell application \"loginwindow\" to «event aevtrrst»")?.executeAndReturnError(nil)
     }
 
     // MARK: Commands
