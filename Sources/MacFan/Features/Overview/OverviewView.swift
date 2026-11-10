@@ -50,6 +50,10 @@ struct OverviewView: View {
                         .labelStyle(TrailingIconLabelStyle())
                 }
                 .buttonStyle(.link)
+
+                if model.preferences.shouldShowStarPrompt() {
+                    StarPromptCard(preferences: model.preferences)
+                }
             }
             .padding(Theme.Spacing.xl)
             .frame(maxWidth: 1100)
@@ -391,6 +395,37 @@ private struct TrailingIconLabelStyle: LabelStyle {
         HStack(spacing: Theme.Spacing.xs) {
             configuration.title
             configuration.icon
+        }
+    }
+}
+
+/// Shown once, after a week of use. Most people install MacFan without ever seeing its
+/// GitHub page, so this is the one place they learn a star helps.
+private struct StarPromptCard: View {
+    let preferences: Preferences
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Card {
+            HStack(alignment: .center, spacing: Theme.Spacing.l) {
+                Image(systemName: "star.fill")
+                    .font(.title2)
+                    .foregroundStyle(.yellow)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text("Enjoying MacFan?").font(.headline)
+                    Text("It's free and open source. A star on GitHub helps other Mac owners find it.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: Theme.Spacing.l)
+                Button("Not Now") { preferences.starPromptDismissed = true }
+                Button("Star on GitHub") {
+                    openURL(AppLinks.repository)
+                    preferences.starPromptDismissed = true
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
     }
 }
