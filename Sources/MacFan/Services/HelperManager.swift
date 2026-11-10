@@ -19,10 +19,11 @@ final class HelperManager {
         case ready
         /// Installed, but speaks an older protocol than this app.
         case outdated
-        /// Registered, but macOS won't start the helper that came with an update until the
-        /// Mac restarts. Ad-hoc signed helpers are trusted by their exact code hash, and the
-        /// launch constraint recorded for the previous build isn't refreshed before then.
-        case needsRestart
+        /// Registered, but macOS won't start the helper that came with an update. Ad-hoc
+        /// signed helpers are trusted by their exact code hash, and launchd keeps the
+        /// constraint recorded for the previous build until the job is removed or the Mac
+        /// restarts. `resetAndReinstall()` fixes it without a restart.
+        case staleAfterUpdate
         case unavailable(String)
     }
 
@@ -65,7 +66,7 @@ final class HelperManager {
             // Unknown history counts as an update: helpers installed before this check
             // existed hit the same restart requirement on their first update.
             if lastWorkingBuild != Self.currentBuild {
-                status = .needsRestart
+                status = .staleAfterUpdate
             } else {
                 status = .unavailable(String(localized: "The helper is registered but isn't responding. Restart your Mac, or see the FAQ in MacFan's README."))
             }
@@ -109,10 +110,60 @@ final class HelperManager {
         SMAppService.openSystemSettingsLoginItems()
     }
 
+    /// Removes the helper's launchd job (macOS asks for an administrator password), then
+    /// registers it again, so launchd records the helper that's in the app now. Fixes
+    /// `.staleAfterUpdate` without a restart.
+    func resetAndReinstall() async {
+        lastError = nil
+        connection?.invalidate()
+        connection = nil
+        // The label is a compile-time constant, so nothing user-controlled reaches the shell.
+        let command = "launchctl bootout system/\(HelperConstants.helperLabel) || true"
+        let script = "do shell script \"\(command)\" with administrator privileges with prompt \"\(String(localized: "MacFan needs to reset its fan control helper after the update."))\""
+        switch await Self.runAppleScript(script) {
+        case .success:
+            await install()
+        case .cancelled:
+            await refresh()
+        case .failed(let message):
+            lastError = message
+            await refresh()
+        }
+    }
+
     /// Shows macOS's own "Are you sure you want to restart?" dialog, so nothing restarts
     /// without the user confirming and every app gets the chance to save.
     func requestRestart() {
         NSAppleScript(source: "tell application \"loginwindow\" to «event aevtrrst»")?.executeAndReturnError(nil)
+    }
+
+    private enum ScriptResult { case success, cancelled, failed(String) }
+
+    /// Runs `osascript` as a child process so the password dialog never blocks the main thread.
+    private static func runAppleScript(_ source: String) async -> ScriptResult {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            let errors = Pipe()
+            process.executableURL = URL(filePath: "/usr/bin/osascript")
+            process.arguments = ["-e", source]
+            process.standardError = errors
+            process.standardOutput = FileHandle.nullDevice
+            process.terminationHandler = { @Sendable process in
+                let output = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                if process.terminationStatus == 0 {
+                    continuation.resume(returning: .success)
+                } else if output.contains("-128") {
+                    continuation.resume(returning: .cancelled)   // the user clicked Cancel
+                } else {
+                    continuation.resume(returning: .failed(output.trimmingCharacters(in: .whitespacesAndNewlines)))
+                }
+            }
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(returning: .failed(error.localizedDescription))
+            }
+        }
     }
 
     // MARK: Commands

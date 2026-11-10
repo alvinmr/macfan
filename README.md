@@ -128,9 +128,9 @@ Details, and what to do if the helper doesn't respond, are in
 and Intel. If something looks wrong on yours, please
 [open an issue](https://github.com/alvinmr/macfan/issues/new) with your Mac model.
 
-**"The helper is registered but isn't responding."** This usually happens right after
-MacFan updates itself: macOS keeps trusting the previous helper until the Mac restarts.
-Restart your Mac and the new helper starts normally. If it still doesn't, see
+**Fan control stopped working after an update.** macOS can keep trusting the previous
+helper after MacFan updates itself. Open **Fans** and click **Reset Helper…** (it asks for
+your password), or restart your Mac. If the helper still doesn't respond, see
 [the helper troubleshooting notes](docs/BUILDING.md#the-helper-is-registered-but-isnt-responding).
 
 **A sensor has a generic name like "Sensor TC2X".** MacFan doesn't know that key yet.

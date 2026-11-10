@@ -233,7 +233,7 @@ private struct HelperSettings: View {
         case .requiresApproval: "Waiting for approval"
         case .ready: "Installed and running"
         case .outdated: "Needs update"
-        case .needsRestart: "Restart your Mac to finish updating"
+        case .staleAfterUpdate: "Needs a reset after the update"
         case .unavailable: "Not responding"
         }
     }

@@ -199,8 +199,8 @@ private struct HelperSetupCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if model.helper.status == .needsRestart {
-                        Text("MacFan was updated, and macOS only starts the new helper after a restart. Until then, macOS keeps controlling the fans.")
+                    if model.helper.status == .staleAfterUpdate {
+                        Text("MacFan was updated, but macOS is still holding on to the previous helper, so it keeps controlling the fans. Resetting the helper fixes this and asks for your password. Restarting your Mac also works.")
                             .font(.callout)
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
@@ -219,8 +219,8 @@ private struct HelperSetupCard: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(isWorking)
 
-                        if model.helper.status == .needsRestart {
-                            Button("Try Again", action: install)
+                        if model.helper.status == .staleAfterUpdate {
+                            Button("Restart Mac…") { model.helper.requestRestart() }
                                 .disabled(isWorking)
                         }
 
@@ -238,7 +238,7 @@ private struct HelperSetupCard: View {
         switch model.helper.status {
         case .requiresApproval: "Allow MacFan in System Settings"
         case .outdated: "Update the fan control helper"
-        case .needsRestart: "Restart to finish updating the helper"
+        case .staleAfterUpdate: "Finish updating the fan control helper"
         default: "One-time setup to control fans"
         }
     }
@@ -247,7 +247,7 @@ private struct HelperSetupCard: View {
         switch model.helper.status {
         case .requiresApproval: "Open Login Items…"
         case .outdated: "Update Helper"
-        case .needsRestart: "Restart…"
+        case .staleAfterUpdate: "Reset Helper…"
         case .unavailable: "Try Again"
         default: "Install Helper"
         }
@@ -258,17 +258,17 @@ private struct HelperSetupCard: View {
             model.helper.openLoginItemsSettings()
             return
         }
-        if model.helper.status == .needsRestart {
-            model.helper.requestRestart()
+        if model.helper.status == .staleAfterUpdate {
+            run { await model.helper.resetAndReinstall() }
             return
         }
-        install()
+        run { await model.helper.install() }
     }
 
-    private func install() {
+    private func run(_ work: @escaping () async -> Void) {
         isWorking = true
         Task {
-            await model.helper.install()
+            await work()
             isWorking = false
             model.refreshNow()
         }
