@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/alvinmr/macfan/compare/v0.3.2...v0.4.0) (2026-11-10)
+
+
+### Features
+
+* add GitHub links and a one-time star prompt ([c93e05a](https://github.com/alvinmr/macfan/commit/c93e05aebe431c1921f937b632b198bc21eedb17))
+* add GitHub links, a one-time star prompt, and a rewritten README ([d5b974f](https://github.com/alvinmr/macfan/commit/d5b974f65fac67ec5287bbbc1055a6bd13e52661))
+
+
+### Bug Fixes
+
+* ask for a restart when an update leaves the helper unable to start ([e4ab9ce](https://github.com/alvinmr/macfan/commit/e4ab9ce7768e0ad9e1fcbf3a16d45d81360e7ebe))
+* reset the helper without a restart after an update ([abfed26](https://github.com/alvinmr/macfan/commit/abfed26a1f94711d6c7623a8e18d8ca480ebbe23))
+* reset the helper without a restart after an update ([b661f24](https://github.com/alvinmr/macfan/commit/b661f2462d7d05bc7bc1890438c2a24ad59633d1))
+
 ## [0.3.2](https://github.com/alvinmr/macfan/compare/v0.3.1...v0.3.2) (2026-11-09)
 
 
