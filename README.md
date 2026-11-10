@@ -76,6 +76,10 @@
 - *Cooling Health*: learns how your Mac normally cools over two weeks, then flags when
   it gets worse, the usual sign of dust in the vents. Kept only on your Mac.
 
+<p align="center">
+  <img src="docs/images/insights.png" width="760" alt="Cooling Health learning how the Mac normally cools">
+</p>
+
 **Everyday**
 - Menu bar with temperature, fan speed or both; pin any sensor there or in the sidebar.
 - Alerts that stay rare enough to mean something: after 30 s above your threshold, at
