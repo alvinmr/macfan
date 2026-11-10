@@ -233,6 +233,7 @@ private struct HelperSettings: View {
         case .requiresApproval: "Waiting for approval"
         case .ready: "Installed and running"
         case .outdated: "Needs update"
+        case .staleAfterUpdate: "Needs a reset after the update"
         case .unavailable: "Not responding"
         }
     }
