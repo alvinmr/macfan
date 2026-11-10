@@ -79,6 +79,21 @@ private struct GeneralSettings: View {
                 }
                 Button("Search for Sensors Again") { model.rediscoverSensors() }
             }
+
+            Section {
+                LabeledContent("MacFan is free and open source") {
+                    HStack {
+                        Link("Report an Issue", destination: AppLinks.newIssue)
+                        Link(destination: AppLinks.repository) {
+                            Label("Star on GitHub", systemImage: "star")
+                        }
+                    }
+                }
+            } footer: {
+                Text("A star helps other Mac owners find MacFan.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

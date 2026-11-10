@@ -23,6 +23,11 @@ struct MacFanApp: App {
                         .disabled(!model.updates.canCheckForUpdates)
                 }
             }
+            CommandGroup(replacing: .help) {
+                Link("MacFan on GitHub", destination: AppLinks.repository)
+                Link("Report an Issue…", destination: AppLinks.newIssue)
+                Link("Release Notes", destination: AppLinks.releases)
+            }
         }
 
         MenuBarExtra {

@@ -70,6 +70,19 @@ final class Preferences {
         didSet { defaults.set(pinnedSensorIDs, forKey: Key.pinnedSensorIDs) }
     }
 
+    /// When MacFan first ran on this Mac. Only used to wait before asking for a GitHub star.
+    let firstLaunchDate: Date
+
+    /// Set once the star prompt is acted on or dismissed, so it's shown at most once.
+    var starPromptDismissed: Bool {
+        didSet { defaults.set(starPromptDismissed, forKey: Key.starPromptDismissed) }
+    }
+
+    /// The star prompt waits until MacFan has been around for a week, then shows once.
+    func shouldShowStarPrompt(now: Date = .now) -> Bool {
+        !starPromptDismissed && now.timeIntervalSince(firstLaunchDate) >= 7 * 24 * 60 * 60
+    }
+
     func isPinned(_ sensorID: String) -> Bool {
         pinnedSensorIDs.contains(sensorID)
     }
@@ -102,6 +115,13 @@ final class Preferences {
         powerProfiles = defaults.data(forKey: Key.powerProfiles)
             .flatMap { try? JSONDecoder().decode(PowerProfiles.self, from: $0) } ?? PowerProfiles()
         pinnedSensorIDs = defaults.stringArray(forKey: Key.pinnedSensorIDs) ?? []
+        starPromptDismissed = defaults.bool(forKey: Key.starPromptDismissed)
+        if let stored = defaults.object(forKey: Key.firstLaunchDate) as? Date {
+            firstLaunchDate = stored
+        } else {
+            firstLaunchDate = .now
+            defaults.set(firstLaunchDate, forKey: Key.firstLaunchDate)
+        }
     }
 
     private static func validated(_ stored: Any?, allowed: Set<Double>, default fallback: Double) -> Double {
@@ -127,5 +147,7 @@ final class Preferences {
         static let cooling = "cooling"
         static let powerProfiles = "powerProfiles"
         static let pinnedSensorIDs = "pinnedSensorIDs"
+        static let firstLaunchDate = "firstLaunchDate"
+        static let starPromptDismissed = "starPromptDismissed"
     }
 }
