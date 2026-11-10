@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/alvinmr/macfan/compare/v0.3.2...v0.4.0) (2026-11-10)
+
+
+### Features
+
+* add GitHub links (Help menu, Settings) and a one-time star prompt ([#16](https://github.com/alvinmr/macfan/issues/16)) ([d5b974f](https://github.com/alvinmr/macfan/commit/d5b974f65fac67ec5287bbbc1055a6bd13e52661))
+
+
+### Bug Fixes
+
+* reset the fan control helper without a restart when an update leaves it unable to start ([#18](https://github.com/alvinmr/macfan/issues/18)) ([abfed26](https://github.com/alvinmr/macfan/commit/abfed26a1f94711d6c7623a8e18d8ca480ebbe23))
+
 ## [0.3.2](https://github.com/alvinmr/macfan/compare/v0.3.1...v0.3.2) (2026-11-09)
 
 
